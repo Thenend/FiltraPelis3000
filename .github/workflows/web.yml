@@ -1,0 +1,51 @@
+# Publica la web en GitHub Pages cada vez que cambia la rama principal.
+# La conexión con Supabase está en src/datos.js. Si existen las variables del repositorio SUPABASE_URL y SUPABASE_ANON_KEY
+# (Settings → Secrets and variables → Actions → pestaña «Variables»), mandan sobre esa.
+name: Web
+
+on:
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  publicar:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.despliegue.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Compilar
+        env:
+          VITE_SUPABASE_URL: ${{ vars.SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ vars.SUPABASE_ANON_KEY }}
+          # la web vive en https://<usuario>.github.io/<repositorio>/
+          BASE: /${{ github.event.repository.name }}/
+        run: |
+          npm run build
+          touch dist/.nojekyll
+
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+      - id: despliegue
+        uses: actions/deploy-pages@v4
