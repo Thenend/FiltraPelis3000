@@ -1,4 +1,5 @@
 import React from 'react';
+import { PESTANAS_COMPARTIBLES } from './CompartirModal';
 
 const ContentCard = ({ 
     item, onContentClick, searchType, isRandomlyChosen, 
@@ -9,7 +10,8 @@ const ContentCard = ({
     onInfoClick,
     externalRating,
     sortBy,
-    viewMode
+    viewMode,
+    amigos // [{ usuario, nombre, email, pestanas }]: amigos que la tienen en alguna pestaña que te comparten
 }) => {
     const posterUrl = item.poster_path ? `https://image.tmdb.org/t/p/w300${item.poster_path}` : `https://placehold.co/300x450/333333/FFFFFF?text=No+Poster`;
     const title = item.title || item.name || 'Título desconocido';
@@ -105,6 +107,18 @@ const ContentCard = ({
             
             <div className={`text-center flex flex-col w-full ${isRandomlyChosen ? 'flex-none' : 'flex-grow'}`}>
                 <h3 className="font-bold text-blue-200 text-md leading-tight mb-2 line-clamp-2 min-h-[2.5rem]" title={title}>{title}</h3>
+                {amigos?.length > 0 && (
+                    <div
+                        className="flex flex-wrap justify-center gap-1 mb-2 text-[10px]"
+                        title={amigos.map(a => `${a.email}: ${PESTANAS_COMPARTIBLES.filter(p => a.pestanas.includes(p.clave)).map(p => p.nombre).join(', ')}`).join('\n')}
+                    >
+                        {amigos.map(a => (
+                            <span key={a.usuario} className="bg-indigo-900/60 text-indigo-200 border border-indigo-700/60 px-1.5 py-0.5 rounded-full max-w-full truncate">
+                                👥 {a.nombre} {PESTANAS_COMPARTIBLES.filter(p => a.pestanas.includes(p.clave)).map(p => p.icono).join('')}
+                            </span>
+                        ))}
+                    </div>
+                )}
                 <div className="mt-auto w-full">
                     <div className="flex justify-between items-center text-xs text-gray-400 mb-2 px-1">
                         <span>{releaseDate}</span>

@@ -134,6 +134,36 @@ export const suscribirPreferencias = (usuarioId, callback) => {
     return () => { supabase.removeChannel(canal); };
 };
 
+// ---------- Bibliotecas compartidas ----------
+// Quién ve tus pestañas y quién te deja ver las suyas. Supabase solo devuelve las listas de las pestañas que esa persona
+// te ha compartido (función «compartidos» de supabase/esquema.sql).
+
+// [{ direccion: 'doy' | 'recibo', usuario, email, pestanas: ['favorites', …], listas: { favorites_movie: [ids], … } }]
+export const cargarCompartidos = async () => {
+    if (modoPrueba) return [];
+    const { data, error } = await supabase.rpc('compartidos');
+    if (error) throw error;
+    return data || [];
+};
+
+const sinModoPrueba = () => {
+    if (modoPrueba) throw new Error('En el modo de prueba no se puede compartir.');
+};
+
+// Comparte con la cuenta de ese correo las pestañas indicadas (o cambia cuáles). Sin pestañas, deja de compartir.
+export const compartirBiblioteca = async (email, pestanas) => {
+    sinModoPrueba();
+    const { error } = await supabase.rpc('compartir_biblioteca', { p_email: email, p_pestanas: pestanas });
+    if (error) throw error;
+};
+
+// Deja de ver la biblioteca que esa persona te comparte.
+export const dejarDeVer = async (duenoId) => {
+    sinModoPrueba();
+    const { error } = await supabase.rpc('dejar_de_ver', { p_dueno: duenoId });
+    if (error) throw error;
+};
+
 // ---------- Notas de OMDb ----------
 
 // Pide a OMDb los datos de una obra a través de la función «omdb» de Supabase, que guarda la clave en secreto.

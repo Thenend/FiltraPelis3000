@@ -111,3 +111,72 @@ begin
     alter publication supabase_realtime add table public.preferencias;
 exception when duplicate_object then null;
 end $$;
+
+-- Bibliotecas compartidas: «dueno» deja ver a «invitado» las pestañas indicadas (favorites, pending, watched) de sus
+-- películas y series. Solo en ese sentido: compartir con alguien no hace que él comparta contigo. Nadie lee la tabla
+-- directamente: todo pasa por las funciones de abajo, que miran quién está conectado (y así nadie ve la clave de Gemini
+-- ni las pestañas que no le han compartido).
+create table if not exists public.compartidos (
+    dueno    uuid not null references auth.users (id) on delete cascade,
+    invitado uuid not null references auth.users (id) on delete cascade,
+    pestanas text[] not null check (cardinality(pestanas) > 0 and pestanas <@ array['favorites', 'pending', 'watched']),
+    creado   timestamptz not null default now(),
+    primary key (dueno, invitado),
+    check (dueno <> invitado)
+);
+create index if not exists compartidos_invitado on public.compartidos (invitado);
+alter table public.compartidos enable row level security;
+revoke all on public.compartidos from anon, authenticated;
+
+-- Comparte (o cambia qué pestañas compartes) con la cuenta de ese correo. Sin pestañas, deja de compartir.
+create or replace function public.compartir_biblioteca(p_email text, p_pestanas text[])
+returns void language plpgsql security definer set search_path = '' as $$
+declare
+    v_invitado uuid;
+    v_pestanas text[];
+begin
+    if auth.uid() is null then raise exception 'Hay que entrar con una cuenta.'; end if;
+    select id into v_invitado from auth.users where lower(email) = lower(trim(p_email));
+    if v_invitado is null then raise exception 'No hay ninguna cuenta con el correo %.', trim(p_email); end if;
+    if v_invitado = auth.uid() then raise exception 'Ese correo es el tuyo.'; end if;
+    select coalesce(array_agg(distinct p), '{}') into v_pestanas
+        from unnest(p_pestanas) p where p in ('favorites', 'pending', 'watched');
+    if cardinality(v_pestanas) = 0 then
+        delete from public.compartidos where dueno = auth.uid() and invitado = v_invitado;
+    else
+        insert into public.compartidos (dueno, invitado, pestanas) values (auth.uid(), v_invitado, v_pestanas)
+        on conflict (dueno, invitado) do update set pestanas = excluded.pestanas;
+    end if;
+end $$;
+
+-- Deja de ver la biblioteca que esa persona te comparte (para dejar de compartir la tuya: compartir_biblioteca sin pestañas).
+drop function if exists public.dejar_de_compartir(uuid);
+create or replace function public.dejar_de_ver(p_dueno uuid)
+returns void language sql security definer set search_path = '' as $$
+    delete from public.compartidos where invitado = auth.uid() and dueno = p_dueno
+$$;
+
+-- Con quién compartes («doy», con las pestañas) y quién comparte contigo («recibo», con las pestañas y sus listas,
+-- solo las claves de esas pestañas: p. ej. favorites_movie y favorites_tv).
+create or replace function public.compartidos()
+returns table (direccion text, usuario uuid, email text, pestanas text[], listas jsonb)
+language sql stable security definer set search_path = '' as $$
+    select 'doy', c.invitado, u.email::text, c.pestanas, null::jsonb
+    from public.compartidos c join auth.users u on u.id = c.invitado
+    where c.dueno = auth.uid()
+    union all
+    select 'recibo', c.dueno, u.email::text, c.pestanas,
+        coalesce((select jsonb_object_agg(k, coalesce(p.datos -> k, '[]'::jsonb))
+                  from unnest(c.pestanas) pe, unnest(array[pe || '_movie', pe || '_tv']) k), '{}'::jsonb)
+    from public.compartidos c
+        join auth.users u on u.id = c.dueno
+        left join public.preferencias p on p.usuario = c.dueno
+    where c.invitado = auth.uid()
+$$;
+
+revoke all on function public.compartir_biblioteca(text, text[]) from public, anon;
+revoke all on function public.dejar_de_ver(uuid) from public, anon;
+revoke all on function public.compartidos() from public, anon;
+grant execute on function public.compartir_biblioteca(text, text[]) to authenticated;
+grant execute on function public.dejar_de_ver(uuid) to authenticated;
+grant execute on function public.compartidos() to authenticated;

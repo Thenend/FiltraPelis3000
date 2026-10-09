@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
 import { modoPrueba, salir, cambiarContrasena } from './datos';
 
-// Barra de arriba: con qué cuenta se ha entrado, la clave de Gemini para «Pregunta al IA» y salir.
-const BarraCuenta = ({ user, geminiKey, onGeminiKeyChange }) => {
+// Barra de arriba: con qué cuenta se ha entrado, compartir la biblioteca, la clave de Gemini para «Pregunta al IA» y salir.
+const BarraCuenta = ({ user, geminiKey, onGeminiKeyChange, onCompartirClick }) => {
     const [panel, setPanel] = useState(null); // null | 'clave' | 'contrasena'
     const [valor, setValor] = useState('');
     const [aviso, setAviso] = useState('');
@@ -32,6 +32,7 @@ const BarraCuenta = ({ user, geminiKey, onGeminiKeyChange }) => {
         <div className="mb-2">
             <div className="flex flex-wrap items-center justify-end gap-2 text-sm text-gray-400">
                 <span className="truncate">{modoPrueba ? '🧪 Modo de prueba (los datos se guardan solo en este navegador)' : user.email}</span>
+                {!modoPrueba && <button onClick={onCompartirClick} className={boton}>👥 Compartir</button>}
                 <button onClick={() => abrir('clave')} className={boton}>🔑 Clave de IA</button>
                 {!modoPrueba && <button onClick={() => abrir('contrasena')} className={boton}>Contraseña</button>}
                 {!modoPrueba && <button onClick={salir} className={boton}>Salir</button>}

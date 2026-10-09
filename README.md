@@ -36,7 +36,13 @@ Abre la web, pulsa **Crear cuenta** y escribe tu correo y una contraseña.
 2. En la web nueva, pulsa **📂 Cargar Backup** y elige ese archivo. Se cargan tus listas, las temporadas vistas de cada
    serie y tus plataformas.
 
-### 3. La IA (opcional)
+### 3. Compartir tu biblioteca (opcional)
+Pulsa **👥 Compartir** (arriba a la derecha), escribe el correo con el que la otra persona entra en la web y marca qué
+pestañas puede ver (**Favoritas**, **Pendientes**, **Vistas**; de películas y de series). Solo podrá mirarlas. Puedes
+cambiar las pestañas o dejar de compartir cuando quieras. Lo que otros te comparten aparece en la pestaña **👥 Amigos**,
+y en cualquier tarjeta se ve qué amigos la tienen en esas pestañas (p. ej. «👥 ana ❤️»).
+
+### 4. La IA (opcional)
 «Pregunta al IA» usa Gemini. Crea una clave gratis en <https://aistudio.google.com/apikey> y pégala en la web en
 **🔑 Clave de IA** (arriba a la derecha). Se guarda solo en tu cuenta.
 
@@ -51,4 +57,6 @@ npm run build
 - `src/Entrada.jsx`, `src/BarraCuenta.jsx`: entrar, crear cuenta, contraseña, clave de IA y salir.
 - `src/componentes/`: las tarjetas, el selector de rangos y las ventanas (temporadas, ficha de OMDb, plataformas).
 - `src/notas.js`: notas de OMDb ya consultadas, guardadas en el navegador.
-- `supabase/esquema.sql`: las tablas `preferencias` y `omdb_cache`, sus permisos y las funciones que guardan cada cambio.
+- `src/componentes/CompartirModal.jsx`: la ventana de compartir la biblioteca.
+- `supabase/esquema.sql`: las tablas `preferencias`, `compartidos` y `omdb_cache`, sus permisos y las funciones que guardan
+  cada cambio y las que comparten la biblioteca (cada persona solo recibe las pestañas que le han compartido).

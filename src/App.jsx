@@ -1,12 +1,13 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { marked } from 'marked';
-import { cargarPreferencias, guardarPreferencias, suscribirPreferencias, consultarOmdb, ponerEnLista, guardarTemporadas } from './datos';
+import { cargarPreferencias, guardarPreferencias, suscribirPreferencias, consultarOmdb, ponerEnLista, guardarTemporadas, cargarCompartidos } from './datos';
 import BarraCuenta from './BarraCuenta';
 import { notaGuardada, guardarNotas } from './notas';
 import ExtendedInfoModal from './componentes/ExtendedInfoModal';
 import SeasonSelectorModal from './componentes/SeasonSelectorModal';
 import PlatformAnalysisModal from './componentes/PlatformAnalysisModal';
 import ContentCard from './componentes/ContentCard';
+import CompartirModal, { PESTANAS_COMPARTIBLES, nombreDe } from './componentes/CompartirModal';
 import DualRangeSlider from './componentes/DualRangeSlider';
 
 
@@ -37,6 +38,13 @@ const App = ({ user }) => {
 
     // --- View Mode State ---
     const [viewMode, setViewMode] = useState('search');
+
+    // --- Bibliotecas compartidas ---
+    // Con quién compartes y quién comparte contigo (con sus listas de las pestañas compartidas). Ver datos.js.
+    const [compartidos, setCompartidos] = useState([]);
+    const [compartirAbierto, setCompartirAbierto] = useState(false);
+    // Qué amigo y qué pestaña suya se ven en la pestaña «Amigos».
+    const [amigoSel, setAmigoSel] = useState({ usuario: null, pestana: null });
 
     // --- Filters ---
     const [genres, setGenres] = useState([]);
@@ -140,6 +148,49 @@ const App = ({ user }) => {
         const unsubscribe = suscribirPreferencias(user.id, aplicarPreferencias);
         return () => { activo = false; unsubscribe(); };
     }, [user, aplicarPreferencias]);
+
+    // Las listas de los amigos no llegan en vivo: se vuelven a pedir al entrar, al volver a la página y al abrir «Amigos».
+    const recargarCompartidos = useCallback(async () => {
+        try { setCompartidos(await cargarCompartidos()); }
+        catch (error) { console.error("Error loading shared libraries:", error); }
+    }, []);
+
+    useEffect(() => {
+        if (!user) return;
+        recargarCompartidos();
+        const alVolver = () => { if (document.visibilityState === 'visible') recargarCompartidos(); };
+        document.addEventListener('visibilitychange', alVolver);
+        return () => document.removeEventListener('visibilitychange', alVolver);
+    }, [user, recargarCompartidos]);
+
+    const amigos = compartidos.filter(c => c.direccion === 'recibo');
+    const amigoVisto = amigos.find(a => a.usuario === amigoSel.usuario) || amigos[0];
+    const pestanaVista = amigoVisto && (amigoVisto.pestanas.includes(amigoSel.pestana) ? amigoSel.pestana
+        : PESTANAS_COMPARTIBLES.map(p => p.clave).find(p => amigoVisto.pestanas.includes(p)));
+    const listaDeAmigo = (amigo, pestana, tipo) => amigo?.listas?.[`${pestana}_${tipo}`] || [];
+
+    // Para cada obra (del tipo actual), qué amigos la tienen y en qué pestañas compartidas: { id: [{ nombre, pestanas }] }
+    const amigosPorObra = {};
+    amigos.forEach(a => {
+        PESTANAS_COMPARTIBLES.forEach(p => {
+            if (!a.pestanas.includes(p.clave)) return;
+            listaDeAmigo(a, p.clave, searchType).forEach(id => {
+                const lista = amigosPorObra[id] || (amigosPorObra[id] = []);
+                let entrada = lista.find(e => e.usuario === a.usuario);
+                if (!entrada) lista.push(entrada = { usuario: a.usuario, nombre: nombreDe(a.email), email: a.email, pestanas: [] });
+                entrada.pestanas.push(p.clave);
+            });
+        });
+    });
+
+    // Las obras de la pestaña que se está viendo (las tuyas, o las del amigo elegido en «Amigos»).
+    const listaDeVista = () => {
+        if (viewMode === 'amigos') return pestanaVista ? listaDeAmigo(amigoVisto, pestanaVista, searchType) : [];
+        const currentLists = userLists[searchType];
+        return viewMode === 'favorites' ? currentLists.favorites : viewMode === 'pending' ? currentLists.pending : viewMode === 'watched' ? currentLists.watched : currentLists.discarded;
+    };
+    const claveVistaAmigo = viewMode === 'amigos' ? `${searchType}_${amigoVisto?.usuario}_${pestanaVista}` : '';
+    const idsVistaAmigo = viewMode === 'amigos' ? listaDeVista().join(',') : '';
 
     const updateStreamingPrefsInFirestore = async (newSelected, newFilterState) => {
         if (!user) return;
@@ -646,24 +697,30 @@ const App = ({ user }) => {
     }, [TMDB_API_KEY, selectedGenre, titleFilter, peopleFilter, yearRange, ratingRange, votesRange, selectedProviders, filterByStreaming, searchType, currentYear]);
 
     useEffect(() => {
-        const currentLists = userLists[searchType];
         if (viewMode === 'search') {
             cargaActual.current++; // descarta cualquier carga de lista o búsqueda que siguiera en marcha
             setLoading(false);
             if (lastSearchResults.length > 0 && lastSearchResultsType.current === searchType) setContent(lastSearchResults);
             else setContent([]);
         } else {
-            const targetList = viewMode === 'favorites' ? currentLists.favorites : viewMode === 'pending' ? currentLists.pending : viewMode === 'watched' ? currentLists.watched : currentLists.discarded;
-            fetchListItems(targetList, false); 
+            fetchListItems(listaDeVista(), false);
         }
-    }, [viewMode, searchType]); 
+    }, [viewMode, searchType, claveVistaAmigo]);
 
     useEffect(() => {
-        if (viewMode === 'search') return;
-        const currentLists = userLists[searchType];
-        const targetList = viewMode === 'favorites' ? currentLists.favorites : viewMode === 'pending' ? currentLists.pending : viewMode === 'watched' ? currentLists.watched : currentLists.discarded;
-        fetchListItems(targetList, true); 
-    }, [userLists]); 
+        if (viewMode === 'search' || viewMode === 'amigos') return;
+        fetchListItems(listaDeVista(), true);
+    }, [userLists]);
+
+    // Si el amigo cambia la lista que estás mirando, se actualiza al volver a pedirla (al cambiar de amigo o de pestaña
+    // ya la carga el efecto de arriba).
+    const vistaAmigoAnterior = useRef({ clave: '', ids: '' });
+    useEffect(() => {
+        const anterior = vistaAmigoAnterior.current;
+        vistaAmigoAnterior.current = { clave: claveVistaAmigo, ids: idsVistaAmigo };
+        if (viewMode === 'amigos' && anterior.clave === claveVistaAmigo && anterior.ids !== idsVistaAmigo) fetchListItems(listaDeVista(), true);
+    }, [claveVistaAmigo, idsVistaAmigo]);
+
 
     useEffect(() => {
         if (pendingSearch) {
@@ -1001,7 +1058,7 @@ const App = ({ user }) => {
                 }
             `}</style>
             <div className="max-w-screen-xl mx-auto">
-                <BarraCuenta user={user} geminiKey={geminiKey} onGeminiKeyChange={async (key) => {
+                <BarraCuenta user={user} onCompartirClick={() => { recargarCompartidos(); setCompartirAbierto(true); }} geminiKey={geminiKey} onGeminiKeyChange={async (key) => {
                     setGeminiKey(key);
                     await guardarPreferencias({ gemini_key: key });
                 }} />
@@ -1016,6 +1073,7 @@ const App = ({ user }) => {
                     <button onClick={() => setViewMode('pending')} className={getTabClass('pending')}>⏳ Pendientes ({currentLists.pending.length})</button>
                     <button onClick={() => setViewMode('watched')} className={getTabClass('watched')}>👁️ Vistas ({currentLists.watched.length})</button>
                     <button onClick={() => setViewMode('discarded')} className={getTabClass('discarded')}>❌ Descartadas ({currentLists.discarded.length})</button>
+                    {amigos.length > 0 && <button onClick={() => { recargarCompartidos(); setViewMode('amigos'); }} className={getTabClass('amigos')}>👥 Amigos</button>}
                 </div>
                 
                 <div className="bg-gray-700 px-4 py-2 flex items-center justify-end gap-2 text-sm border-x border-gray-600">
@@ -1152,7 +1210,32 @@ const App = ({ user }) => {
                             {viewMode === 'pending' && '⏳ Tu Lista de Pendientes'}
                             {viewMode === 'watched' && '👁️ Lo que has visto'}
                             {viewMode === 'discarded' && '❌ Lo descartado'}
+                            {viewMode === 'amigos' && (amigoVisto ? `👥 Biblioteca de ${nombreDe(amigoVisto.email)}` : '👥 Amigos')}
                         </h2>
+                        {viewMode === 'amigos' && (amigoVisto ? (
+                            <div className="flex flex-col items-center gap-3 mb-4">
+                                {amigos.length > 1 && (
+                                    <div className="flex flex-wrap justify-center gap-2">
+                                        {amigos.map(a => (
+                                            <button key={a.usuario} onClick={() => setAmigoSel({ usuario: a.usuario, pestana: pestanaVista })} title={a.email}
+                                                className={`px-4 py-1 rounded-full text-sm font-semibold ${a.usuario === amigoVisto.usuario ? 'bg-blue-600 text-white' : 'bg-gray-700 text-gray-300 hover:bg-gray-600'}`}>
+                                                {nombreDe(a.email)}
+                                            </button>
+                                        ))}
+                                    </div>
+                                )}
+                                <div className="flex flex-wrap justify-center gap-2">
+                                    {PESTANAS_COMPARTIBLES.filter(p => amigoVisto.pestanas.includes(p.clave)).map(p => (
+                                        <button key={p.clave} onClick={() => setAmigoSel({ usuario: amigoVisto.usuario, pestana: p.clave })}
+                                            className={`px-4 py-1 rounded-full text-sm font-semibold ${p.clave === pestanaVista ? 'bg-indigo-600 text-white' : 'bg-gray-700 text-gray-300 hover:bg-gray-600'}`}>
+                                            {p.icono} {p.nombre} ({listaDeAmigo(amigoVisto, p.clave, searchType).length})
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+                        ) : (
+                            <p className="text-gray-400 mb-4">Ya nadie comparte su biblioteca contigo.</p>
+                        ))}
                         <p className="text-gray-400 capitalize mb-4">
                             Mostrando lista de <span className="text-blue-400 font-bold">{searchType === 'movie' ? 'Películas' : 'Series'}</span>
                         </p>
@@ -1214,6 +1297,7 @@ const App = ({ user }) => {
                                             }
                                             sortBy={sortBy}
                                             viewMode={viewMode}
+                                            amigos={amigosPorObra[randomlyChosenContent.id]}
                                         />
                                     );
                                 })()}
@@ -1254,6 +1338,7 @@ const App = ({ user }) => {
                                             externalRating={extRating}
                                             sortBy={sortBy}
                                             viewMode={viewMode}
+                                            amigos={amigosPorObra[item.id]}
                                         />
                                     );
                                 })}
@@ -1308,6 +1393,13 @@ const App = ({ user }) => {
                 loading={infoModalState.loading}
                 error={infoModalState.error}
                 onPersonClick={handlePersonSearch}
+            />
+
+            <CompartirModal
+                isOpen={compartirAbierto}
+                onClose={() => setCompartirAbierto(false)}
+                compartidos={compartidos}
+                onCambio={recargarCompartidos}
             />
 
             <PlatformAnalysisModal 
