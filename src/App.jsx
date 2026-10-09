@@ -909,6 +909,31 @@ const App = ({ user }) => {
         finally { if (!isBackgroundUpdate) setLoading(false); }
     }, [searchType, TMDB_API_KEY]);
 
+    // Pide a TMDB las páginas de resultados de 5 en 5 a la vez (antes, una detrás de otra), en orden, hasta tener
+    // CONTENT_TO_FETCH_COUNT resultados o acabarse las páginas. Si una página falla, se queda con las anteriores.
+    const pedirPaginas = async (urlDePagina, maxPaginas) => {
+        const pedir = async (n) => {
+            try {
+                const res = await fetch(urlDePagina(n));
+                return res.ok ? await res.json() : null;
+            } catch { return null; }
+        };
+        const primera = await pedir(1);
+        if (!primera) return [];
+        let resultados = primera.results || [];
+        const ultima = Math.min(maxPaginas, primera.total_pages || 1);
+        for (let desde = 2; desde <= ultima && resultados.length < CONTENT_TO_FETCH_COUNT; desde += 5) {
+            const numeros = [];
+            for (let n = desde; n < desde + 5 && n <= ultima; n++) numeros.push(n);
+            const paginas = await Promise.all(numeros.map(pedir));
+            for (const pagina of paginas) {
+                if (!pagina) return resultados;
+                resultados = resultados.concat(pagina.results || []);
+            }
+        }
+        return resultados;
+    };
+
     const fetchContent = useCallback(async () => {
         if (!TMDB_API_KEY) { showMessage("API Key inválida."); return; }
         setLoading(true);
@@ -1024,14 +1049,7 @@ const App = ({ user }) => {
 
             } else if (useSearchEndpoint) {
                 // Buscador de Texto (Películas y Series)
-                for (let i = 1; i <= pagesToFetchLimit; i++) {
-                    const searchUrl = `https://api.themoviedb.org/3/search/${searchType}?api_key=${TMDB_API_KEY}&language=es-ES&include_adult=false&query=${encodeURIComponent(titleFilter)}&page=${i}`;
-                    const response = await fetch(searchUrl);
-                    if (!response.ok) break;
-                    const data = await response.json();
-                    allContent = allContent.concat(data.results || []);
-                    if (allContent.length >= CONTENT_TO_FETCH_COUNT || data.page >= data.total_pages) break;
-                }
+                allContent = await pedirPaginas(i => `https://api.themoviedb.org/3/search/${searchType}?api_key=${TMDB_API_KEY}&language=es-ES&include_adult=false&query=${encodeURIComponent(titleFilter)}&page=${i}`, pagesToFetchLimit);
                 
                 allContent = allContent.filter(item => {
                     const rating = item.vote_average || 0;
@@ -1051,7 +1069,7 @@ const App = ({ user }) => {
                 });
             } else {
                 // Discover API general (Películas sin filtros locales, Series sin actores)
-                for (let i = 1; i <= pagesToFetchLimit; i++) {
+                allContent = await pedirPaginas(i => {
                     let url = `https://api.themoviedb.org/3/discover/${searchType}?api_key=${TMDB_API_KEY}&language=es-ES&include_adult=false&include_video=false&page=${i}`;
                     if (selectedGenre) url += `&with_genres=${selectedGenre}`;
                     if (yearRange[0] > 1900) {
@@ -1074,12 +1092,8 @@ const App = ({ user }) => {
                     if (votesRange[0] > 0) url += `&vote_count.gte=${votesRange[0]}`;
                     if (votesRange[1] < 1000) url += `&vote_count.lte=${votesRange[1]}`;
                     url += `&sort_by=vote_average.desc`;
-                    const response = await fetch(url);
-                    if (!response.ok) break;
-                    const data = await response.json();
-                    allContent = allContent.concat(data.results || []);
-                    if (allContent.length >= CONTENT_TO_FETCH_COUNT || data.page >= data.total_pages) break;
-                }
+                    return url;
+                }, pagesToFetchLimit);
 
                 if (titleFilter) {
                     const searchWords = titleFilter.toLowerCase().split(' ').filter(word => word.length > 0);
@@ -1133,6 +1147,9 @@ const App = ({ user }) => {
         }
     }, [pendingSearch, fetchContent]);
 
+    // Qué obras hay (sin importar el orden): reordenar la lista no debe volver a empezar a pedir las notas.
+    const idsContenido = content.map(c => c.id).sort((a, b) => a - b).join(',');
+
     useEffect(() => {
         let isCancelled = false; 
         if (sortBy === 'tmdb_rating') {
@@ -1164,7 +1181,7 @@ const App = ({ user }) => {
             setSortingProgress(0); 
 
             const chunkSize = 5; 
-            const delayBetweenChunks = 1500; 
+            const delayBetweenChunks = 300; 
             let processedCount = 0;
 
             for (let i = 0; i < itemsToFetch.length; i += chunkSize) {
@@ -1207,7 +1224,7 @@ const App = ({ user }) => {
 
         fetchExternalRatingsForAll();
         return () => { isCancelled = true; };
-    }, [sortBy, content]); 
+    }, [sortBy, idsContenido, searchType]); 
 
     const parseOmdbRating = (data, source) => {
         if (!data.Ratings) return 0;
