@@ -575,6 +575,8 @@ const App = ({ user }) => {
     
     // --- CACHING STATES ---
     const [lastSearchResults, setLastSearchResults] = useState([]); 
+    // Tipo (movie/tv) de lastSearchResults: al pasar de Series a Películas no se deben volver a mostrar las series.
+    const lastSearchResultsType = useRef(null);
     const contentCache = useRef({}); 
 
     const [showModal, setShowModal] = useState(false);
@@ -776,7 +778,7 @@ const App = ({ user }) => {
                         const data = await res.json();
                         updates[item.id] = data.runtime;
                         if (contentCache.current[`movie_${item.id}`]) contentCache.current[`movie_${item.id}`].runtime = data.runtime;
-                    }
+                    } else updates[item.id] = null; // sin duración en TMDB: no volver a pedirla
                 } catch (e) { console.error(e); }
             }));
 
@@ -1099,6 +1101,7 @@ const App = ({ user }) => {
             const finalResults = finalFilteredContent.slice(0, CONTENT_TO_FETCH_COUNT);
             setContent(finalResults);
             setLastSearchResults(finalResults); 
+            lastSearchResultsType.current = searchType;
             addToCache(finalResults);
             if (finalResults.length === 0) showMessage(`No se encontró contenido.`);
         } catch (err) { console.error(err); setError(`Error al cargar resultados.`); } finally { setLoading(false); }
@@ -1107,7 +1110,7 @@ const App = ({ user }) => {
     useEffect(() => {
         const currentLists = userLists[searchType];
         if (viewMode === 'search') {
-            if (lastSearchResults.length > 0) setContent(lastSearchResults);
+            if (lastSearchResults.length > 0 && lastSearchResultsType.current === searchType) setContent(lastSearchResults);
             else setContent([]);
         } else {
             const targetList = viewMode === 'favorites' ? currentLists.favorites : viewMode === 'pending' ? currentLists.pending : viewMode === 'watched' ? currentLists.watched : currentLists.discarded;
@@ -1304,7 +1307,7 @@ const App = ({ user }) => {
             if (!idsRes.ok) throw new Error('No se pudo conectar con TMDB.');
             const idsData = await idsRes.json();
             const imdbId = idsData.imdb_id;
-            if (!imdbId) throw new Error('Esta obra no tiene ficha en IMDb vinculada.');
+            if (!imdbId) { setInfoModalState({ isOpen: true, data: null, loading: false, error: 'Esta obra no tiene ficha en IMDb vinculada.' }); return; }
 
             const omdbUrl = `https://www.omdbapi.com/?apikey=${OMDb_API_KEY}&i=${imdbId}&plot=full`;
             const omdbRes = await fetch(omdbUrl);
