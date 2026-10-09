@@ -264,9 +264,9 @@ const App = ({ user }) => {
                     const res = await fetch(`https://api.themoviedb.org/3/movie/${item.id}?api_key=${TMDB_API_KEY}&language=es-ES`);
                     if (res.ok) {
                         const data = await res.json();
-                        updates[item.id] = data.runtime;
-                        if (contentCache.current[`movie_${item.id}`]) contentCache.current[`movie_${item.id}`].runtime = data.runtime;
-                    } else updates[item.id] = null; // sin duración en TMDB: no volver a pedirla
+                        updates[item.id] = data.runtime ?? null;
+                    } else updates[item.id] = null; // sin duración en TMDB (o ya no existe): no volver a pedirla
+                    if (contentCache.current[`movie_${item.id}`]) contentCache.current[`movie_${item.id}`].runtime = updates[item.id];
                 } catch (e) { console.error(e); }
             }));
 
@@ -706,6 +706,10 @@ const App = ({ user }) => {
                 await Promise.all(chunk.map(async (item) => {
                     try {
                         const extRes = await fetch(`https://api.themoviedb.org/3/${searchType}/${item.id}/external_ids?api_key=${TMDB_API_KEY}`);
+                        if (extRes.status === 404) { // la obra ya no existe en TMDB: sin notas, y no volver a pedirla
+                            paraGuardar[item.id] = currentBatchCache[item.id] = { imdb: 0, rt: 0, meta: 0 };
+                            return;
+                        }
                         if (!extRes.ok) return;
                         const extData = await extRes.json();
                         const imdbId = extData.imdb_id;
@@ -750,24 +754,28 @@ const App = ({ user }) => {
 
     const sortContentByExternal = (criteria, cacheOverride) => {
         const cache = cacheOverride || omdbCache;
-        const sorted = [...content].sort((a, b) => {
-            const ratingsA = cache[a.id] || { imdb: 0, rt: 0, meta: 0 };
-            const ratingsB = cache[b.id] || { imdb: 0, rt: 0, meta: 0 };
-            let valA = 0; let valB = 0;
+        // Ordena la lista actual (prev), no la que había cuando empezó la consulta de notas: así no se pierden
+        // las duraciones que han llegado mientras tanto, que si no se volverían a pedir.
+        setContent(prev => {
+            const sorted = [...prev].sort((a, b) => {
+                const ratingsA = cache[a.id] || { imdb: 0, rt: 0, meta: 0 };
+                const ratingsB = cache[b.id] || { imdb: 0, rt: 0, meta: 0 };
+                let valA = 0; let valB = 0;
 
-            if (criteria === 'imdb') { valA = ratingsA.imdb; valB = ratingsB.imdb; }
-            else if (criteria === 'rotten_tomatoes') { valA = ratingsA.rt; valB = ratingsB.rt; }
-            else if (criteria === 'metacritic') { valA = ratingsA.meta; valB = ratingsB.meta; }
+                if (criteria === 'imdb') { valA = ratingsA.imdb; valB = ratingsB.imdb; }
+                else if (criteria === 'rotten_tomatoes') { valA = ratingsA.rt; valB = ratingsB.rt; }
+                else if (criteria === 'metacritic') { valA = ratingsA.meta; valB = ratingsB.meta; }
 
-            if (valA === 0 && valB > 0) return 1;
-            if (valB === 0 && valA > 0) return -1;
-            if (valA === 0 && valB === 0) return (b.vote_average || 0) - (a.vote_average || 0);
-            return valB - valA;
+                if (valA === 0 && valB > 0) return 1;
+                if (valB === 0 && valA > 0) return -1;
+                if (valA === 0 && valB === 0) return (b.vote_average || 0) - (a.vote_average || 0);
+                return valB - valA;
+            });
+
+            const currentIds = prev.map(c => c.id).join(',');
+            const newIds = sorted.map(c => c.id).join(',');
+            return currentIds !== newIds ? sorted : prev;
         });
-        
-        const currentIds = content.map(c => c.id).join(',');
-        const newIds = sorted.map(c => c.id).join(',');
-        if (currentIds !== newIds) setContent(sorted);
     };
 
     const handleExploreClick = () => setViewMode('search');
