@@ -72,6 +72,9 @@ const App = ({ user }) => {
     // Tipo (movie/tv) de lastSearchResults: al pasar de Series a Películas no se deben volver a mostrar las series.
     const lastSearchResultsType = useRef(null);
     const contentCache = useRef({}); 
+    // Número de la carga de tarjetas en curso. Cada cambio de pestaña, de Películas/Series o búsqueda nueva lo sube,
+    // y una carga que termina con un número viejo se descarta: si no, sus tarjetas acabarían en la sección nueva.
+    const cargaActual = useRef(0);
 
     const [showModal, setShowModal] = useState(false);
     const [modalContent, setModalContent] = useState('');
@@ -256,6 +259,7 @@ const App = ({ user }) => {
         if (itemsMissingRuntime.length === 0) return;
 
         const fetchDetails = async () => {
+            const miCarga = cargaActual.current; // si mientras tanto se cambia de sección, no tocar las tarjetas nuevas
             const batch = itemsMissingRuntime.slice(0, 5);
             const updates = {};
 
@@ -270,7 +274,7 @@ const App = ({ user }) => {
                 } catch (e) { console.error(e); }
             }));
 
-            if (Object.keys(updates).length > 0) {
+            if (miCarga === cargaActual.current && Object.keys(updates).length > 0) {
                 setContent(prev => prev.map(item => updates[item.id] !== undefined ? { ...item, runtime: updates[item.id] } : item));
             }
         };
@@ -394,6 +398,8 @@ const App = ({ user }) => {
     };
 
     const fetchListItems = useCallback(async (ids, isBackgroundUpdate = false) => {
+        const miCarga = isBackgroundUpdate ? cargaActual.current : ++cargaActual.current;
+        const sigueVigente = () => miCarga === cargaActual.current;
         if (!isBackgroundUpdate) { setLoading(true); setError(null); setContent([]); setRandomlyChosenContent(null); setShowRandomChoiceOnly(false); setSortBy('tmdb_rating'); }
         if (!ids || ids.length === 0) { if (!isBackgroundUpdate) setLoading(false); setContent([]); return; }
 
@@ -416,10 +422,11 @@ const App = ({ user }) => {
                     itemsToDisplay.push(...validResults);
                 }
             }
+            if (!sigueVigente()) return;
             itemsToDisplay.sort((a, b) => (b.vote_average || 0) - (a.vote_average || 0));
             setContent(itemsToDisplay);
-        } catch (err) { setError("Error al cargar la lista."); } 
-        finally { if (!isBackgroundUpdate) setLoading(false); }
+        } catch (err) { if (sigueVigente()) setError("Error al cargar la lista."); } 
+        finally { if (!isBackgroundUpdate && sigueVigente()) setLoading(false); }
     }, [searchType, TMDB_API_KEY]);
 
     // Pide a TMDB las páginas de resultados de 5 en 5 a la vez (antes, una detrás de otra), en orden, hasta tener
@@ -449,6 +456,8 @@ const App = ({ user }) => {
 
     const fetchContent = useCallback(async () => {
         if (!TMDB_API_KEY) { showMessage("API Key inválida."); return; }
+        const miCarga = ++cargaActual.current;
+        const sigueVigente = () => miCarga === cargaActual.current;
         setLoading(true);
         setError(null);
         setContent([]);
@@ -625,6 +634,7 @@ const App = ({ user }) => {
                 return !isDuplicate;
             });
 
+            if (!sigueVigente()) return;
             finalFilteredContent.sort((a, b) => (b.vote_average || 0) - (a.vote_average || 0));
             const finalResults = finalFilteredContent.slice(0, CONTENT_TO_FETCH_COUNT);
             setContent(finalResults);
@@ -632,12 +642,14 @@ const App = ({ user }) => {
             lastSearchResultsType.current = searchType;
             addToCache(finalResults);
             if (finalResults.length === 0) showMessage(`No se encontró contenido.`);
-        } catch (err) { console.error(err); setError(`Error al cargar resultados.`); } finally { setLoading(false); }
+        } catch (err) { console.error(err); if (sigueVigente()) setError(`Error al cargar resultados.`); } finally { if (sigueVigente()) setLoading(false); }
     }, [TMDB_API_KEY, selectedGenre, titleFilter, peopleFilter, yearRange, ratingRange, votesRange, selectedProviders, filterByStreaming, searchType, currentYear]);
 
     useEffect(() => {
         const currentLists = userLists[searchType];
         if (viewMode === 'search') {
+            cargaActual.current++; // descarta cualquier carga de lista o búsqueda que siguiera en marcha
+            setLoading(false);
             if (lastSearchResults.length > 0 && lastSearchResultsType.current === searchType) setContent(lastSearchResults);
             else setContent([]);
         } else {
@@ -779,7 +791,7 @@ const App = ({ user }) => {
     };
 
     const handleExploreClick = () => setViewMode('search');
-    const handleSearchClick = () => { setViewMode('search'); fetchContent(); };
+    const handleSearchClick = () => { setViewMode('search'); setPendingSearch(true); }; // la búsqueda arranca después de cambiar de pestaña, para que no se descarte
     const handleContentClick = (contentId, type) => window.open(`https://www.themoviedb.org/${type}/${contentId}?language=es-ES`, '_blank');
     
     // Función para analizar disponibilidad en plataformas
