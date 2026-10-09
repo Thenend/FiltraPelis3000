@@ -44,7 +44,12 @@ pestañas puede ver (**Favoritas**, **Pendientes**, **Vistas**; de películas y 
 cambiar las pestañas o dejar de compartir cuando quieras. Lo que otros te comparten aparece en la pestaña **👥 Amigos**,
 y en cualquier tarjeta se ve qué amigos la tienen en esas pestañas (p. ej. «👥 ana ❤️»).
 
-### 4. La IA (opcional)
+### 4. Recomendar películas y series (opcional)
+Pulsa **💌** en cualquier tarjeta, marca a quién se la recomiendas (o escribe su nombre de usuario) y añade una nota si
+quieres. Lo que te recomiendan aparece en la pestaña **💌 Recomendadas**, con quién te lo recomendó y su nota; desde ahí
+puedes pasarlo a Pendientes o quitarlo.
+
+### 5. La IA (opcional)
 «Pregunta al IA» usa Gemini. Crea una clave gratis en <https://aistudio.google.com/apikey> y pégala en la web en
 **🔑 Clave de IA** (arriba a la derecha). Se guarda solo en tu cuenta.
 
@@ -61,5 +66,6 @@ npm run build
 - `src/componentes/`: las tarjetas, el selector de rangos y las ventanas (temporadas, ficha de OMDb, plataformas).
 - `src/notas.js`: notas de OMDb ya consultadas, guardadas en el navegador.
 - `src/componentes/CompartirModal.jsx`: la ventana de compartir la biblioteca.
-- `supabase/esquema.sql`: las tablas `preferencias`, `perfiles` (nombres de usuario), `compartidos` y `omdb_cache`, sus permisos y las funciones que guardan
+- `src/componentes/RecomendarModal.jsx`: la ventana de recomendar una película o serie.
+- `supabase/esquema.sql`: las tablas `preferencias`, `perfiles` (nombres de usuario), `compartidos`, `recomendaciones` y `omdb_cache`, sus permisos y las funciones que guardan
   cada cambio y las que comparten la biblioteca (cada persona solo recibe las pestañas que le han compartido).

@@ -198,6 +198,35 @@ export const dejarDeVer = async (duenoId) => {
     if (error) throw error;
 };
 
+// ---------- Recomendaciones ----------
+// Películas y series que te recomiendan otras personas (funciones «recomendar», «recomendaciones_recibidas» y
+// «quitar_recomendacion» de supabase/esquema.sql).
+
+// [{ id, de, nombre, tipo: 'movie' | 'tv', obra, nota, creada }], de la más nueva a la más vieja.
+export const cargarRecomendaciones = async () => {
+    if (modoPrueba) return [];
+    const { data, error } = await supabase.rpc('recomendaciones_recibidas');
+    if (error) throw error;
+    return data || [];
+};
+
+// Recomienda una obra a esas cuentas (ids) y a esos nombres de usuario. Devuelve a cuántas personas.
+export const recomendar = async (usuarios, nombres, tipo, obra, nota) => {
+    if (modoPrueba) throw new Error('En el modo de prueba no se puede recomendar.');
+    const { data, error } = await supabase.rpc('recomendar', {
+        p_usuarios: usuarios, p_nombres: nombres, p_tipo: tipo, p_obra: obra, p_nota: nota,
+    });
+    if (error) throw error;
+    return data;
+};
+
+// La quita de tus «Recomendadas» (venga de quien venga).
+export const quitarRecomendacion = async (tipo, obra) => {
+    if (modoPrueba) return;
+    const { error } = await supabase.rpc('quitar_recomendacion', { p_tipo: tipo, p_obra: obra });
+    if (error) throw error;
+};
+
 // ---------- Notas de OMDb ----------
 
 // Pide a OMDb los datos de una obra a través de la función «omdb» de Supabase, que guarda la clave en secreto.

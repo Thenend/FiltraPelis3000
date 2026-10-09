@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { marked } from 'marked';
-import { cargarPreferencias, guardarPreferencias, suscribirPreferencias, consultarOmdb, ponerEnLista, guardarTemporadas, cargarCompartidos } from './datos';
+import { cargarPreferencias, guardarPreferencias, suscribirPreferencias, consultarOmdb, ponerEnLista, guardarTemporadas, cargarCompartidos, cargarRecomendaciones, quitarRecomendacion } from './datos';
 import BarraCuenta from './BarraCuenta';
 import { notaGuardada, guardarNotas } from './notas';
 import ExtendedInfoModal from './componentes/ExtendedInfoModal';
@@ -9,6 +9,7 @@ import PlatformAnalysisModal from './componentes/PlatformAnalysisModal';
 import ContentCard from './componentes/ContentCard';
 import CompartirModal, { PESTANAS_COMPARTIBLES } from './componentes/CompartirModal';
 import DualRangeSlider from './componentes/DualRangeSlider';
+import RecomendarModal from './componentes/RecomendarModal';
 
 
 // Main App component
@@ -46,6 +47,11 @@ const App = ({ user, nombre, onNombreCambiado }) => {
     // Qué amigo y qué pestaña suya (una o ninguna) se ven en la pestaña «Amigos».
     // Con pestanas a null, la primera que comparte.
     const [amigoSel, setAmigoSel] = useState({ usuario: null, pestanas: null });
+
+    // --- Recomendaciones ---
+    // Las que te han hecho (ver datos.js) y la obra que estás recomendando ({ tipo, id, titulo }) o null.
+    const [recomendaciones, setRecomendaciones] = useState([]);
+    const [obraARecomendar, setObraARecomendar] = useState(null);
 
     // --- Filters ---
     const [genres, setGenres] = useState([]);
@@ -150,19 +156,25 @@ const App = ({ user, nombre, onNombreCambiado }) => {
         return () => { activo = false; unsubscribe(); };
     }, [user, aplicarPreferencias]);
 
-    // Las listas de los amigos no llegan en vivo: se vuelven a pedir al entrar, al volver a la página y al abrir «Amigos».
+    // Las listas de los amigos y las recomendaciones no llegan en vivo: se vuelven a pedir al entrar, al volver a la
+    // página y al abrir «Amigos» o «Recomendadas».
     const recargarCompartidos = useCallback(async () => {
         try { setCompartidos(await cargarCompartidos()); }
         catch (error) { console.error("Error loading shared libraries:", error); }
+    }, []);
+    const recargarRecomendaciones = useCallback(async () => {
+        try { setRecomendaciones(await cargarRecomendaciones()); }
+        catch (error) { console.error("Error loading recommendations:", error); }
     }, []);
 
     useEffect(() => {
         if (!user) return;
         recargarCompartidos();
-        const alVolver = () => { if (document.visibilityState === 'visible') recargarCompartidos(); };
+        recargarRecomendaciones();
+        const alVolver = () => { if (document.visibilityState === 'visible') { recargarCompartidos(); recargarRecomendaciones(); } };
         document.addEventListener('visibilitychange', alVolver);
         return () => document.removeEventListener('visibilitychange', alVolver);
-    }, [user, recargarCompartidos]);
+    }, [user, recargarCompartidos, recargarRecomendaciones]);
 
     const amigos = compartidos.filter(c => c.direccion === 'recibo');
     const amigoVisto = amigos.find(a => a.usuario === amigoSel.usuario) || amigos[0];
@@ -186,14 +198,49 @@ const App = ({ user, nombre, onNombreCambiado }) => {
         });
     });
 
-    // Las obras de la pestaña que se está viendo (las tuyas, o las del amigo elegido en «Amigos»).
+    // Para cada obra (del tipo actual), quién te la ha recomendado: { id: [{ id, nombre, nota }] }
+    const recomendacionesPorObra = {};
+    recomendaciones.filter(r => r.tipo === searchType).forEach(r => {
+        (recomendacionesPorObra[r.obra] || (recomendacionesPorObra[r.obra] = [])).push(r);
+    });
+    const recomendadas = Object.keys(recomendacionesPorObra).map(Number);
+
+    // A quién se puede recomendar con un clic: con quien compartes, quien comparte contigo y quien te ha recomendado algo.
+    const amigosParaRecomendar = [];
+    [...compartidos.map(c => ({ usuario: c.usuario, nombre: c.nombre })), ...recomendaciones.map(r => ({ usuario: r.de, nombre: r.nombre }))]
+        .forEach(a => { if (!amigosParaRecomendar.some(x => x.usuario === a.usuario)) amigosParaRecomendar.push(a); });
+    amigosParaRecomendar.sort((a, b) => a.nombre.localeCompare(b.nombre));
+
+    const abrirRecomendar = (id, titulo) => setObraARecomendar({ tipo: searchType, id, titulo });
+
+    // «⏳ A pendientes» en «Recomendadas»: la pone en Pendientes (si no estaba) y la quita de Recomendadas.
+    const quitarDeRecomendadas = async (id, aPendientes) => {
+        const tipo = searchType;
+        setRecomendaciones(prev => prev.filter(r => !(r.tipo === tipo && r.obra === id)));
+        try {
+            if (aPendientes && !userLists[tipo].pending.includes(id)) {
+                setUserLists(prev => ({ ...prev, [tipo]: { ...prev[tipo], pending: [...prev[tipo].pending, id] } }));
+                await ponerEnLista(`pending_${tipo}`, id, true);
+            }
+            await quitarRecomendacion(tipo, id);
+        } catch (error) {
+            console.error("Error removing recommendation:", error);
+            showMessage("No se ha podido guardar el cambio. Revisa la conexión.");
+            recargarRecomendaciones();
+        }
+    };
+
+    // Las obras de la pestaña que se está viendo (las tuyas, las del amigo elegido en «Amigos» o las recomendadas).
     const listaDeVista = () => {
+        if (viewMode === 'recomendadas') return recomendadas;
         if (viewMode === 'amigos') return [...new Set(pestanasVistas.flatMap(p => listaDeAmigo(amigoVisto, p, searchType)))];
         const currentLists = userLists[searchType];
         return viewMode === 'favorites' ? currentLists.favorites : viewMode === 'pending' ? currentLists.pending : viewMode === 'watched' ? currentLists.watched : currentLists.discarded;
     };
-    const claveVistaAmigo = viewMode === 'amigos' ? `${searchType}_${amigoVisto?.usuario}_${pestanasVistas.join('+')}` : '';
-    const idsVistaAmigo = viewMode === 'amigos' ? listaDeVista().join(',') : '';
+    // En «Amigos» y «Recomendadas» la lista viene de otras personas: qué se está viendo y qué obras tiene ahora.
+    const claveVistaAmigo = viewMode === 'amigos' ? `${searchType}_${amigoVisto?.usuario}_${pestanasVistas.join('+')}`
+        : viewMode === 'recomendadas' ? `${searchType}_recomendadas` : '';
+    const idsVistaAmigo = viewMode === 'amigos' || viewMode === 'recomendadas' ? listaDeVista().join(',') : '';
 
     const updateStreamingPrefsInFirestore = async (newSelected, newFilterState) => {
         if (!user) return;
@@ -711,17 +758,17 @@ const App = ({ user, nombre, onNombreCambiado }) => {
     }, [viewMode, searchType, claveVistaAmigo]);
 
     useEffect(() => {
-        if (viewMode === 'search' || viewMode === 'amigos') return;
+        if (viewMode === 'search' || viewMode === 'amigos' || viewMode === 'recomendadas') return;
         fetchListItems(listaDeVista(), true);
     }, [userLists]);
 
-    // Si el amigo cambia la lista que estás mirando, se actualiza al volver a pedirla (al cambiar de amigo o de pestaña
-    // ya la carga el efecto de arriba).
+    // Si el amigo cambia la lista que estás mirando, o te llegan o quitas recomendaciones, se actualiza al volver a
+    // pedirla (al cambiar de amigo o de pestaña ya la carga el efecto de arriba).
     const vistaAmigoAnterior = useRef({ clave: '', ids: '' });
     useEffect(() => {
         const anterior = vistaAmigoAnterior.current;
         vistaAmigoAnterior.current = { clave: claveVistaAmigo, ids: idsVistaAmigo };
-        if (viewMode === 'amigos' && anterior.clave === claveVistaAmigo && anterior.ids !== idsVistaAmigo) fetchListItems(listaDeVista(), true);
+        if ((viewMode === 'amigos' || viewMode === 'recomendadas') && anterior.clave === claveVistaAmigo && anterior.ids !== idsVistaAmigo) fetchListItems(listaDeVista(), true);
     }, [claveVistaAmigo, idsVistaAmigo]);
 
 
@@ -1076,6 +1123,7 @@ const App = ({ user, nombre, onNombreCambiado }) => {
                     <button onClick={() => setViewMode('pending')} className={getTabClass('pending')}>⏳ Pendientes ({currentLists.pending.length})</button>
                     <button onClick={() => setViewMode('watched')} className={getTabClass('watched')}>👁️ Vistas ({currentLists.watched.length})</button>
                     <button onClick={() => setViewMode('discarded')} className={getTabClass('discarded')}>❌ Descartadas ({currentLists.discarded.length})</button>
+                    {(recomendaciones.length > 0 || viewMode === 'recomendadas') && <button onClick={() => { recargarRecomendaciones(); setViewMode('recomendadas'); }} className={getTabClass('recomendadas')}>💌 Recomendadas ({recomendadas.length})</button>}
                     {amigos.length > 0 && <button onClick={() => { recargarCompartidos(); setViewMode('amigos'); }} className={getTabClass('amigos')}>👥 Amigos</button>}
                 </div>
                 
@@ -1213,8 +1261,16 @@ const App = ({ user, nombre, onNombreCambiado }) => {
                             {viewMode === 'pending' && '⏳ Tu Lista de Pendientes'}
                             {viewMode === 'watched' && '👁️ Lo que has visto'}
                             {viewMode === 'discarded' && '❌ Lo descartado'}
+                            {viewMode === 'recomendadas' && '💌 Te las recomiendan'}
                             {viewMode === 'amigos' && (amigoVisto ? `👥 Biblioteca de ${amigoVisto.nombre}` : '👥 Amigos')}
                         </h2>
+                        {viewMode === 'recomendadas' && (
+                            <p className="text-gray-400 mb-4">
+                                {recomendadas.length > 0
+                                    ? 'Pásalas a Pendientes o quítalas de aquí cuando quieras.'
+                                    : `No tienes ${searchType === 'movie' ? 'películas' : 'series'} recomendadas.`}
+                            </p>
+                        )}
                         {viewMode === 'amigos' && (amigoVisto ? (
                             <div className="flex flex-col items-center gap-3 mb-4">
                                 {amigos.length > 1 && (
@@ -1302,6 +1358,10 @@ const App = ({ user, nombre, onNombreCambiado }) => {
                                             sortBy={sortBy}
                                             viewMode={viewMode}
                                             amigos={amigosPorObra[randomlyChosenContent.id]}
+                                            recomendaciones={recomendacionesPorObra[randomlyChosenContent.id]}
+                                            onRecommend={abrirRecomendar}
+                                            onRecomendacionPendiente={viewMode === 'recomendadas' ? (id) => quitarDeRecomendadas(id, true) : null}
+                                            onRecomendacionQuitar={(id) => quitarDeRecomendadas(id, false)}
                                         />
                                     );
                                 })()}
@@ -1343,6 +1403,10 @@ const App = ({ user, nombre, onNombreCambiado }) => {
                                             sortBy={sortBy}
                                             viewMode={viewMode}
                                             amigos={amigosPorObra[item.id]}
+                                            recomendaciones={recomendacionesPorObra[item.id]}
+                                            onRecommend={abrirRecomendar}
+                                            onRecomendacionPendiente={viewMode === 'recomendadas' ? (id) => quitarDeRecomendadas(id, true) : null}
+                                            onRecomendacionQuitar={(id) => quitarDeRecomendadas(id, false)}
                                         />
                                     );
                                 })}
@@ -1404,6 +1468,12 @@ const App = ({ user, nombre, onNombreCambiado }) => {
                 onClose={() => setCompartirAbierto(false)}
                 compartidos={compartidos}
                 onCambio={recargarCompartidos}
+            />
+
+            <RecomendarModal
+                obra={obraARecomendar}
+                onClose={() => setObraARecomendar(null)}
+                amigos={amigosParaRecomendar}
             />
 
             <PlatformAnalysisModal 

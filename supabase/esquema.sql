@@ -269,3 +269,80 @@ grant execute on function public.cambiar_compartido(uuid, text[]) to authenticat
 grant execute on function public.dejar_de_ver(uuid) to authenticated;
 grant execute on function public.bibliotecas_compartidas() to authenticated;
 
+
+-- Recomendaciones: «de» le recomienda a «para» una película o serie (tipo «movie» o «tv» y su número en TMDB), con una
+-- nota opcional. Si vuelve a recomendar la misma, se cambia la nota y la fecha. Quien la recibe la ve en «Recomendadas»
+-- hasta que la pasa a Pendientes o la quita. Nadie lee la tabla directamente: todo pasa por las funciones de abajo.
+create table if not exists public.recomendaciones (
+    id     bigint generated always as identity primary key,
+    de     uuid not null references auth.users (id) on delete cascade,
+    para   uuid not null references auth.users (id) on delete cascade,
+    tipo   text not null check (tipo in ('movie', 'tv')),
+    obra   bigint not null,
+    nota   text check (char_length(nota) <= 300),
+    creada timestamptz not null default now(),
+    unique (de, para, tipo, obra),
+    check (de <> para)
+);
+create index if not exists recomendaciones_para on public.recomendaciones (para);
+alter table public.recomendaciones enable row level security;
+revoke all on public.recomendaciones from anon, authenticated;
+
+-- Recomienda una obra a esas cuentas (por su id, como los amigos de «Amigos») y a las de esos nombres de usuario (o
+-- correos, si llevan «@»). Devuelve a cuántas personas se ha recomendado.
+create or replace function public.recomendar(p_usuarios uuid[], p_nombres text[], p_tipo text, p_obra bigint, p_nota text default null)
+returns integer language plpgsql security definer set search_path = '' as $$
+declare
+    v_destinos uuid[] := coalesce(p_usuarios, '{}');
+    v_nombre text;
+    v_usuario uuid;
+    v_nota text := nullif(trim(coalesce(p_nota, '')), '');
+begin
+    if auth.uid() is null then raise exception 'Hay que entrar con una cuenta.'; end if;
+    if p_tipo not in ('movie', 'tv') then raise exception 'Tipo de obra desconocido.'; end if;
+    if char_length(v_nota) > 300 then raise exception 'La nota no puede pasar de 300 letras.'; end if;
+    foreach v_nombre in array coalesce(p_nombres, '{}') loop
+        v_nombre := trim(v_nombre);
+        continue when v_nombre = '';
+        if v_nombre like '%@%' then
+            select id into v_usuario from auth.users where lower(email) = lower(v_nombre);
+            if v_usuario is null then raise exception 'No hay ninguna cuenta con el correo %.', v_nombre; end if;
+        else
+            select usuario into v_usuario from public.perfiles where lower(nombre) = lower(v_nombre);
+            if v_usuario is null then raise exception 'No hay nadie con el nombre de usuario «%».', v_nombre; end if;
+        end if;
+        v_destinos := v_destinos || v_usuario;
+    end loop;
+    v_destinos := array(select distinct d from unnest(v_destinos) d where exists (select 1 from auth.users u where u.id = d));
+    if auth.uid() = any (v_destinos) then raise exception 'No te puedes recomendar nada a ti.'; end if;
+    if cardinality(v_destinos) = 0 then raise exception 'Elige al menos a una persona.'; end if;
+    insert into public.recomendaciones (de, para, tipo, obra, nota)
+    select auth.uid(), d, p_tipo, p_obra, v_nota from unnest(v_destinos) d
+    on conflict (de, para, tipo, obra) do update set nota = excluded.nota, creada = now();
+    return cardinality(v_destinos);
+end $$;
+
+-- Las recomendaciones que te han hecho, de la más nueva a la más vieja, con el nombre de quien te la hizo.
+create or replace function public.recomendaciones_recibidas()
+returns table (id bigint, de uuid, nombre text, tipo text, obra bigint, nota text, creada timestamptz)
+language sql stable security definer set search_path = '' as $$
+    select r.id, r.de, coalesce(pf.nombre, split_part(u.email::text, '@', 1)), r.tipo, r.obra, r.nota, r.creada
+    from public.recomendaciones r
+        join auth.users u on u.id = r.de
+        left join public.perfiles pf on pf.usuario = r.de
+    where r.para = auth.uid()
+    order by r.creada desc
+$$;
+
+-- Quita de tus «Recomendadas» todas las recomendaciones de esa obra (de cualquiera que te la haya recomendado).
+create or replace function public.quitar_recomendacion(p_tipo text, p_obra bigint)
+returns void language sql security definer set search_path = '' as $$
+    delete from public.recomendaciones where para = auth.uid() and tipo = p_tipo and obra = p_obra
+$$;
+
+revoke all on function public.recomendar(uuid[], text[], text, bigint, text) from public, anon;
+revoke all on function public.recomendaciones_recibidas() from public, anon;
+revoke all on function public.quitar_recomendacion(text, bigint) from public, anon;
+grant execute on function public.recomendar(uuid[], text[], text, bigint, text) to authenticated;
+grant execute on function public.recomendaciones_recibidas() to authenticated;
+grant execute on function public.quitar_recomendacion(text, bigint) to authenticated;

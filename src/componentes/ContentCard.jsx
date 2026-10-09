@@ -11,7 +11,10 @@ const ContentCard = ({
     externalRating,
     sortBy,
     viewMode,
-    amigos // [{ usuario, nombre, pestanas }]: amigos que la tienen en alguna pestaña que te comparten
+    amigos, // [{ usuario, nombre, pestanas }]: amigos que la tienen en alguna pestaña que te comparten
+    recomendaciones, // [{ id, nombre, nota }]: quién te la ha recomendado
+    onRecommend, // abre la ventana para recomendarla
+    onRecomendacionPendiente, onRecomendacionQuitar // solo en «Recomendadas»
 }) => {
     const posterUrl = item.poster_path ? `https://image.tmdb.org/t/p/w300${item.poster_path}` : `https://placehold.co/300x450/333333/FFFFFF?text=No+Poster`;
     const title = item.title || item.name || 'Título desconocido';
@@ -119,6 +122,22 @@ const ContentCard = ({
                         ))}
                     </div>
                 )}
+                {recomendaciones?.length > 0 && (
+                    <div className="flex flex-col gap-1 mb-2 text-[11px] text-left">
+                        {recomendaciones.map(r => (
+                            <div key={r.id} className="bg-rose-900/40 border border-rose-700/50 text-rose-100 rounded-lg px-2 py-1">
+                                <span className="font-semibold">💌 {r.nombre}</span>
+                                {r.nota && <span className="text-rose-200/90 break-words">: «{r.nota}»</span>}
+                            </div>
+                        ))}
+                    </div>
+                )}
+                {onRecomendacionPendiente && (
+                    <div className="flex gap-1 mb-2 text-xs">
+                        <button onClick={(e) => { e.stopPropagation(); onRecomendacionPendiente(item.id); }} className="flex-1 py-1 rounded bg-yellow-700 hover:bg-yellow-600 text-white font-semibold" title="Pasarla a Pendientes y quitarla de Recomendadas">⏳ A pendientes</button>
+                        <button onClick={(e) => { e.stopPropagation(); onRecomendacionQuitar(item.id); }} className="flex-1 py-1 rounded bg-gray-700 hover:bg-gray-600 text-gray-200 font-semibold" title="Quitarla de Recomendadas">Quitar</button>
+                    </div>
+                )}
                 <div className="mt-auto w-full">
                     <div className="flex justify-between items-center text-xs text-gray-400 mb-2 px-1">
                         <span>{releaseDate}</span>
@@ -144,6 +163,7 @@ const ContentCard = ({
                         <button onClick={(e) => handleAction(e, onToggleFavorite)} className={`flex-1 py-1.5 rounded hover:bg-pink-900 transition-colors ${isFavorite ? 'bg-pink-700 text-white' : 'bg-gray-700 text-gray-400'}`} title="Añadir a Favoritas">❤️</button>
                         <button onClick={(e) => handleAction(e, onTogglePending)} className={`flex-1 py-1.5 rounded hover:bg-yellow-900 transition-colors ${isPending ? 'bg-yellow-700 text-white' : 'bg-gray-700 text-gray-400'}`} title="Marcar como Pendiente">⏳</button>
                         <button onClick={(e) => handleAction(e, onToggleDiscarded)} className={`flex-1 py-1.5 rounded hover:bg-red-900 transition-colors ${isDiscarded ? 'bg-red-700 text-white' : 'bg-gray-700 text-gray-400'}`} title="Descartar">❌</button>
+                        {onRecommend && <button onClick={(e) => { e.stopPropagation(); onRecommend(item.id, title); }} className="flex-1 py-1.5 rounded hover:bg-blue-900 transition-colors bg-gray-700 text-gray-400" title="Recomendar a un amigo">💌</button>}
                     </div>
                 </div>
             </div>
