@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { marked } from 'marked';
-import { cargarPreferencias, guardarPreferencias, suscribirPreferencias } from './datos';
+import { cargarPreferencias, guardarPreferencias, suscribirPreferencias, consultarOmdb } from './datos';
 import BarraCuenta from './BarraCuenta';
 import { notaGuardada, guardarNotas } from './notas';
 
@@ -605,7 +605,6 @@ const App = ({ user }) => {
     const fileInputRef = useRef(null);
 
     const TMDB_API_KEY = 'e9f3911cf980b7c06cbefcd31e6d73bc';
-    const OMDb_API_KEY = '1436d473';
     const CONTENT_TO_FETCH_COUNT = 1000;
     const CONTENT_PER_PAGE = 20;
     const WATCH_REGION = 'ES';
@@ -1182,11 +1181,9 @@ const App = ({ user }) => {
                         const imdbId = extData.imdb_id;
                         
                         if (imdbId) {
-                            const omdbRes = await fetch(`https://www.omdbapi.com/?apikey=${OMDb_API_KEY}&i=${imdbId}`);
-                            if (omdbRes.ok) {
-                                const omdbData = await omdbRes.json();
-                                currentBatchCache[item.id] = { imdb: omdbData.imdbRating && omdbData.imdbRating !== 'N/A' ? parseFloat(omdbData.imdbRating) : 0, rt: parseOmdbRating(omdbData, 'Rotten Tomatoes'), meta: parseOmdbRating(omdbData, 'Metacritic') };
-                                if (omdbData.Response === 'True') paraGuardar[item.id] = currentBatchCache[item.id];
+                            const omdbData = await consultarOmdb(imdbId);
+                            if (omdbData.Response === 'True') {
+                                paraGuardar[item.id] = currentBatchCache[item.id] = { imdb: omdbData.imdbRating && omdbData.imdbRating !== 'N/A' ? parseFloat(omdbData.imdbRating) : 0, rt: parseOmdbRating(omdbData, 'Rotten Tomatoes'), meta: parseOmdbRating(omdbData, 'Metacritic') };
                             } else currentBatchCache[item.id] = { imdb: 0, rt: 0, meta: 0 }; 
                         } else paraGuardar[item.id] = currentBatchCache[item.id] = { imdb: 0, rt: 0, meta: 0 }; 
                     } catch (e) { console.error("Error fetching rating for", item.title, e); }
@@ -1324,10 +1321,7 @@ const App = ({ user }) => {
             const imdbId = idsData.imdb_id;
             if (!imdbId) { setInfoModalState({ isOpen: true, data: null, loading: false, error: 'Esta obra no tiene ficha en IMDb vinculada.' }); return; }
 
-            const omdbUrl = `https://www.omdbapi.com/?apikey=${OMDb_API_KEY}&i=${imdbId}&plot=full`;
-            const omdbRes = await fetch(omdbUrl);
-            if (!omdbRes.ok) throw new Error('Error de conexión con OMDb.');
-            const omdbData = await omdbRes.json();
+            const omdbData = await consultarOmdb(imdbId, 'full');
             if (omdbData.Response === 'False') throw new Error(omdbData.Error || 'No se encontraron detalles.');
 
             setInfoModalState({ isOpen: true, data: omdbData, loading: false, error: null });

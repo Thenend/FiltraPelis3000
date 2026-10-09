@@ -104,3 +104,15 @@ export const suscribirPreferencias = (usuarioId, callback) => {
         .subscribe();
     return () => { supabase.removeChannel(canal); };
 };
+
+// ---------- Notas de OMDb ----------
+
+// Pide a OMDb los datos de una obra a través de la función «omdb» de Supabase, que guarda la clave en secreto.
+// Devuelve siempre la respuesta de OMDb ({ Response: 'True', … } o { Response: 'False', Error }).
+export const consultarOmdb = async (imdbId, plot = 'short') => {
+    if (modoPrueba) return { Response: 'False', Error: 'En el modo de prueba no se consultan las notas.' };
+    const { data, error } = await supabase.functions.invoke('omdb', { body: { i: imdbId, plot } });
+    if (!error) return data;
+    const cuerpo = await error.context?.json?.().catch(() => null);
+    return cuerpo?.Error ? cuerpo : { Response: 'False', Error: 'Error de conexión con OMDb.' };
+};
