@@ -12,7 +12,7 @@ const ContentCard = ({
     sortBy,
     viewMode,
     amigos, // [{ usuario, nombre, pestanas }]: amigos que la tienen en alguna pestaña que te comparten
-    recomendaciones, // [{ id, nombre, nota }]: quién te la ha recomendado
+    recomendaciones, // [{ id, nombre, nota, nueva }]: quién te la ha recomendado
     onRecommend, // abre la ventana para recomendarla
     onRecomendacionPendiente, onRecomendacionQuitar // solo en «Recomendadas»
 }) => {
@@ -126,6 +126,7 @@ const ContentCard = ({
                     <div className="flex flex-col gap-1 mb-2 text-[11px] text-left">
                         {recomendaciones.map(r => (
                             <div key={r.id} className="bg-rose-900/40 border border-rose-700/50 text-rose-100 rounded-lg px-2 py-1">
+                                {r.nueva && <span className="bg-rose-600 text-white text-[9px] font-bold uppercase rounded px-1 mr-1">Nueva</span>}
                                 <span className="font-semibold">💌 {r.nombre}</span>
                                 {r.nota && <span className="text-rose-200/90 break-words">: «{r.nota}»</span>}
                             </div>

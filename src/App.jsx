@@ -52,6 +52,14 @@ const App = ({ user, nombre, onNombreCambiado }) => {
     // Las que te han hecho (ver datos.js) y la obra que estás recomendando ({ tipo, id, titulo }) o null.
     const [recomendaciones, setRecomendaciones] = useState([]);
     const [obraARecomendar, setObraARecomendar] = useState(null);
+    // Fecha de la recomendación más nueva que ya has visto, de películas y de series: { movie, tv }. Se guarda en tus
+    // preferencias, así vale en todos tus dispositivos; las posteriores son «nuevas». undefined mientras cargan.
+    const [recVistas, setRecVistas] = useState(undefined);
+    // Las que eran nuevas al abrir «Recomendadas», para marcarlas mientras sigas ahí.
+    const [recResaltadas, setRecResaltadas] = useState([]);
+    const [avisoRecCerrado, setAvisoRecCerrado] = useState(false);
+    // Pestaña a abrir después de cambiar entre Películas y Series (al cambiar, se vuelve a «Explorar»).
+    const vistaTrasCambiarTipo = useRef(null);
 
     // --- Filters ---
     const [genres, setGenres] = useState([]);
@@ -144,6 +152,7 @@ const App = ({ user, nombre, onNombreCambiado }) => {
         if (data.selected_providers) setSelectedProviders(data.selected_providers);
         if (typeof data.filter_by_streaming !== 'undefined') setFilterByStreaming(data.filter_by_streaming);
         setGeminiKey(data.gemini_key || '');
+        setRecVistas(data.recomendadas_vistas || {});
     }, []);
 
     useEffect(() => {
@@ -198,10 +207,10 @@ const App = ({ user, nombre, onNombreCambiado }) => {
         });
     });
 
-    // Para cada obra (del tipo actual), quién te la ha recomendado: { id: [{ id, nombre, nota }] }
+    // Para cada obra (del tipo actual), quién te la ha recomendado: { id: [{ id, nombre, nota, nueva }] }
     const recomendacionesPorObra = {};
     recomendaciones.filter(r => r.tipo === searchType).forEach(r => {
-        (recomendacionesPorObra[r.obra] || (recomendacionesPorObra[r.obra] = [])).push(r);
+        (recomendacionesPorObra[r.obra] || (recomendacionesPorObra[r.obra] = [])).push({ ...r, nueva: recResaltadas.includes(r.id) });
     });
     const recomendadas = Object.keys(recomendacionesPorObra).map(Number);
 
@@ -210,6 +219,30 @@ const App = ({ user, nombre, onNombreCambiado }) => {
     [...compartidos.map(c => ({ usuario: c.usuario, nombre: c.nombre })), ...recomendaciones.map(r => ({ usuario: r.de, nombre: r.nombre }))]
         .forEach(a => { if (!amigosParaRecomendar.some(x => x.usuario === a.usuario)) amigosParaRecomendar.push(a); });
     amigosParaRecomendar.sort((a, b) => a.nombre.localeCompare(b.nombre));
+
+    // Recomendaciones nuevas (de películas y de series): las que llegaron después de la última que viste de ese tipo.
+    const recNuevas = recVistas === undefined ? []
+        : recomendaciones.filter(r => !recVistas[r.tipo] || new Date(r.creada) > new Date(recVistas[r.tipo]));
+    const recNuevasAqui = recNuevas.filter(r => r.tipo === searchType);
+
+    // Al abrir «Recomendadas», las de este tipo dejan de ser nuevas (pero se siguen marcando mientras estés ahí).
+    useEffect(() => {
+        if (viewMode !== 'recomendadas') { setRecResaltadas([]); return; }
+        if (recNuevasAqui.length === 0) return;
+        setRecResaltadas(prev => [...prev, ...recNuevasAqui.map(r => r.id)]);
+        const masNueva = recNuevasAqui.reduce((max, r) => (new Date(r.creada) > new Date(max) ? r.creada : max), recNuevasAqui[0].creada);
+        setRecVistas(prev => ({ ...prev, [searchType]: masNueva }));
+        guardarPreferencias({ recomendadas_vistas: { ...recVistas, [searchType]: masNueva } })
+            .catch(error => console.error("Error saving seen recommendations:", error));
+    }, [viewMode, searchType, recNuevasAqui.map(r => r.id).join(',')]);
+
+    // «Ver» del aviso: abre «Recomendadas» en Películas o Series, donde esté la más nueva.
+    const verRecomendadasNuevas = () => {
+        const tipo = recNuevas[0]?.tipo || searchType;
+        recargarRecomendaciones();
+        if (tipo === searchType) setViewMode('recomendadas');
+        else { vistaTrasCambiarTipo.current = 'recomendadas'; setSearchType(tipo); }
+    };
 
     const abrirRecomendar = (id, titulo) => setObraARecomendar({ tipo: searchType, id, titulo });
 
@@ -473,7 +506,8 @@ const App = ({ user, nombre, onNombreCambiado }) => {
             } catch (err) { console.error(err); }
         };
         fetchData();
-        setViewMode('search');
+        setViewMode(vistaTrasCambiarTipo.current || 'search');
+        vistaTrasCambiarTipo.current = null;
         setContent([]);
         setLastSearchResults([]);
         setItemProvidersCache({});
@@ -1112,6 +1146,19 @@ const App = ({ user, nombre, onNombreCambiado }) => {
                     setGeminiKey(key);
                     await guardarPreferencias({ gemini_key: key });
                 }} />
+                {recNuevas.length > 0 && !avisoRecCerrado && viewMode !== 'recomendadas' && (
+                    <div className="mt-6 mx-auto max-w-2xl bg-rose-900/50 border border-rose-600 rounded-xl px-4 py-3 flex flex-wrap items-center justify-center gap-3 text-center shadow-lg">
+                        <span className="text-rose-100">
+                            💌 {recNuevas.length === 1
+                                ? <>{recNuevas[0].nombre} te ha recomendado {recNuevas[0].tipo === 'movie' ? 'una película' : 'una serie'}.</>
+                                : <>Tienes {recNuevas.length} recomendaciones nuevas de {[...new Set(recNuevas.map(r => r.nombre))].join(', ')}.</>}
+                        </span>
+                        <div className="flex gap-2">
+                            <button onClick={verRecomendadasNuevas} className="px-4 py-1 rounded-full bg-rose-600 hover:bg-rose-500 text-white font-bold text-sm">Ver</button>
+                            <button onClick={() => setAvisoRecCerrado(true)} className="px-3 py-1 rounded-full bg-gray-700 hover:bg-gray-600 text-gray-200 text-sm" title="Ocultar el aviso (seguirán como nuevas)">Luego</button>
+                        </div>
+                    </div>
+                )}
                 <div className="flex justify-center mt-8 gap-4">
                     <button onClick={() => setSearchType('movie')} className={`px-6 py-2 rounded-full font-bold shadow-lg transition duration-300 ${searchType === 'movie' ? 'bg-blue-600 text-white' : 'bg-gray-700 text-gray-300'}`}>Películas</button>
                     <button onClick={() => setSearchType('tv')} className={`px-6 py-2 rounded-full font-bold shadow-lg transition duration-300 ${searchType === 'tv' ? 'bg-purple-600 text-white' : 'bg-gray-700 text-gray-300'}`}>Series</button>
@@ -1123,7 +1170,7 @@ const App = ({ user, nombre, onNombreCambiado }) => {
                     <button onClick={() => setViewMode('pending')} className={getTabClass('pending')}>⏳ Pendientes ({currentLists.pending.length})</button>
                     <button onClick={() => setViewMode('watched')} className={getTabClass('watched')}>👁️ Vistas ({currentLists.watched.length})</button>
                     <button onClick={() => setViewMode('discarded')} className={getTabClass('discarded')}>❌ Descartadas ({currentLists.discarded.length})</button>
-                    {(recomendaciones.length > 0 || viewMode === 'recomendadas') && <button onClick={() => { recargarRecomendaciones(); setViewMode('recomendadas'); }} className={getTabClass('recomendadas')}>💌 Recomendadas ({recomendadas.length})</button>}
+                    {(recomendaciones.length > 0 || viewMode === 'recomendadas') && <button onClick={() => { recargarRecomendaciones(); setViewMode('recomendadas'); }} className={getTabClass('recomendadas')}>💌 Recomendadas ({recomendadas.length}){recNuevasAqui.length > 0 && viewMode !== 'recomendadas' && <span className="ml-1.5 bg-rose-600 text-white text-xs font-bold rounded-full px-1.5 py-0.5" title="Nuevas">{recNuevasAqui.length} nueva{recNuevasAqui.length > 1 ? 's' : ''}</span>}</button>}
                     {amigos.length > 0 && <button onClick={() => { recargarCompartidos(); setViewMode('amigos'); }} className={getTabClass('amigos')}>👥 Amigos</button>}
                 </div>
                 
