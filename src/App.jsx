@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { marked } from 'marked';
-import { cargarPreferencias, guardarPreferencias, suscribirPreferencias, consultarOmdb } from './datos';
+import { cargarPreferencias, guardarPreferencias, suscribirPreferencias, consultarOmdb, ponerEnLista, guardarTemporadas } from './datos';
 import BarraCuenta from './BarraCuenta';
 import { notaGuardada, guardarNotas } from './notas';
 
@@ -645,17 +645,6 @@ const App = ({ user }) => {
         return () => { activo = false; unsubscribe(); };
     }, [user, aplicarPreferencias]);
 
-    const updateListInFirestore = async (listType, listName, newList) => {
-        if (!user) return;
-        const firestoreKey = `${listName}_${listType}`;
-        try {
-            await guardarPreferencias({ [firestoreKey]: newList });
-        } catch (error) {
-            console.error(`Error updating ${firestoreKey}:`, error);
-            showMessage("No se ha podido guardar el cambio. Revisa la conexión.");
-        }
-    };
-
     const updateStreamingPrefsInFirestore = async (newSelected, newFilterState) => {
         if (!user) return;
         try {
@@ -663,12 +652,18 @@ const App = ({ user }) => {
         } catch (error) { console.error("Error updating streaming prefs:", error); }
     };
 
-    const toggleList = (id, listName) => {
+    const toggleList = async (id, listName) => {
         const currentTypeLists = userLists[searchType];
         const currentList = currentTypeLists[listName];
-        const newList = currentList.includes(id) ? currentList.filter(itemId => itemId !== id) : [...currentList, id];
+        const poner = !currentList.includes(id);
+        const newList = poner ? [...currentList, id] : currentList.filter(itemId => itemId !== id);
         setUserLists(prev => ({ ...prev, [searchType]: { ...prev[searchType], [listName]: newList } }));
-        updateListInFirestore(searchType, listName, newList);
+        try {
+            await ponerEnLista(`${listName}_${searchType}`, id, poner);
+        } catch (error) {
+            console.error(`Error updating ${listName}_${searchType}:`, error);
+            showMessage("No se ha podido guardar el cambio. Revisa la conexión.");
+        }
     };
 
     const saveWatchedSeasons = async (showId, selectedWatchedSeasons, selectedWatchingSeasons) => {
@@ -694,7 +689,7 @@ const App = ({ user }) => {
 
         if (user) {
             try {
-                await guardarPreferencias({ watchedSeasons_tv: newWatchedSeasons, watchingSeasons_tv: newWatchingSeasons, watched_tv: newWatchedList });
+                await guardarTemporadas(showId, selectedWatchedSeasons, selectedWatchingSeasons, isFullyWatched);
             } catch (error) {
                 console.error("Error saving seasons:", error);
                 showMessage("No se ha podido guardar el cambio. Revisa la conexión.");
@@ -806,34 +801,59 @@ const App = ({ user }) => {
     };
 
     const handleImportClick = () => { if (fileInputRef.current) fileInputRef.current.click(); };
+    // Al elegir un backup se pregunta si sustituir todo o combinarlo con lo que ya hay.
+    const [backupPendiente, setBackupPendiente] = useState(null);
+
     const handleFileChange = (event) => {
         const file = event.target.files[0];
         if (!file) return;
         const reader = new FileReader();
-        reader.onload = async (e) => {
-            try {
-                const importedData = JSON.parse(e.target.result);
-                const newLists = { ...userLists };
-                if (importedData.movie) newLists.movie = importedData.movie;
-                if (importedData.tv) newLists.tv = { ...newLists.tv, ...importedData.tv, watchedSeasons: importedData.tv.watchedSeasons || {}, watchingSeasons: importedData.tv.watchingSeasons || {} };
-                setUserLists(newLists);
-                if (importedData.selectedProviders) setSelectedProviders(importedData.selectedProviders);
-                if (typeof importedData.filterByStreaming !== 'undefined') setFilterByStreaming(importedData.filterByStreaming);
-                
-                ['movie', 'tv'].forEach(type => {
-                    ['watched', 'discarded', 'favorites', 'pending'].forEach(list => {
-                        updateListInFirestore(type, list, newLists[type][list]);
-                    });
-                });
-                
-                if (user) {
-                    await guardarPreferencias({ watchedSeasons_tv: newLists.tv.watchedSeasons, watchingSeasons_tv: newLists.tv.watchingSeasons, selected_providers: importedData.selectedProviders || [], filter_by_streaming: importedData.filterByStreaming || false });
-                }
-                showMessage("Datos restaurados correctamente.");
-            } catch (err) { showMessage("Error al leer backup."); }
+        reader.onload = (e) => {
+            try { setBackupPendiente(JSON.parse(e.target.result)); }
+            catch (err) { showMessage("Error al leer backup."); }
         };
         reader.readAsText(file);
         event.target.value = ''; 
+    };
+
+    const unir = (a = [], b = []) => [...a, ...b.filter(x => !a.includes(x))];
+    const unirTemporadas = (a = {}, b = {}) => {
+        const r = { ...a };
+        Object.entries(b).forEach(([serie, temporadas]) => { r[serie] = unir(a[serie], temporadas).sort((x, y) => x - y); });
+        return r;
+    };
+
+    const aplicarBackup = async (combinar) => {
+        const importedData = backupPendiente;
+        setBackupPendiente(null);
+        try {
+            const newLists = { movie: { ...userLists.movie }, tv: { ...userLists.tv } };
+            ['movie', 'tv'].forEach(type => {
+                const lista = importedData[type];
+                if (!lista) return;
+                ['watched', 'discarded', 'favorites', 'pending'].forEach(name => {
+                    newLists[type][name] = combinar ? unir(newLists[type][name], lista[name]) : (lista[name] || []);
+                });
+            });
+            if (importedData.tv) {
+                newLists.tv.watchedSeasons = combinar ? unirTemporadas(newLists.tv.watchedSeasons, importedData.tv.watchedSeasons) : (importedData.tv.watchedSeasons || {});
+                newLists.tv.watchingSeasons = combinar ? unirTemporadas(newLists.tv.watchingSeasons, importedData.tv.watchingSeasons) : (importedData.tv.watchingSeasons || {});
+            }
+            const providers = combinar ? unir(selectedProviders, importedData.selectedProviders) : (importedData.selectedProviders || []);
+            const streaming = combinar ? filterByStreaming : !!importedData.filterByStreaming;
+
+            setUserLists(newLists);
+            setSelectedProviders(providers);
+            setFilterByStreaming(streaming);
+
+            const cambios = { selected_providers: providers, filter_by_streaming: streaming,
+                watchedSeasons_tv: newLists.tv.watchedSeasons, watchingSeasons_tv: newLists.tv.watchingSeasons };
+            ['movie', 'tv'].forEach(type => ['watched', 'discarded', 'favorites', 'pending'].forEach(name => {
+                cambios[`${name}_${type}`] = newLists[type][name];
+            }));
+            await guardarPreferencias(cambios);
+            showMessage(combinar ? "Backup combinado con tus datos." : "Datos restaurados correctamente.");
+        } catch (err) { console.error(err); showMessage("No se ha podido guardar el backup. Revisa la conexión."); }
     };
 
     const showMessage = (message) => { setModalContent(String(message)); setShowModal(true); };
@@ -1780,6 +1800,20 @@ const App = ({ user }) => {
                 progress={analysisModal.progress}
                 total={analysisModal.total}
             />
+
+            {backupPendiente && (
+                    <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4">
+                        <div className="bg-gray-800 p-8 rounded-xl shadow-2xl border border-gray-700 max-w-md w-full text-center">
+                            <p className="text-xl font-semibold mb-2 text-gray-200">¿Cómo quieres cargar el backup?</p>
+                            <p className="text-gray-400 mb-6">Combinar añade lo del archivo a tus listas. Sustituir borra tus listas actuales y deja solo lo del archivo.</p>
+                            <div className="flex flex-wrap justify-center gap-3">
+                                <button onClick={() => aplicarBackup(true)} className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-full shadow-md">Combinar</button>
+                                <button onClick={() => aplicarBackup(false)} className="px-6 py-2 bg-red-600 hover:bg-red-700 text-white font-bold rounded-full shadow-md">Sustituir</button>
+                                <button onClick={() => setBackupPendiente(null)} className="px-6 py-2 bg-gray-600 hover:bg-gray-500 text-white font-bold rounded-full shadow-md">Cancelar</button>
+                            </div>
+                        </div>
+                    </div>
+                )}
 
             {showModal && (
                     <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4">
