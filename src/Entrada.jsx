@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { entrar, registrarse, recuperarContrasena } from './datos';
+import { entrar, registrarse, recuperarContrasena, NOMBRE_VALIDO, AVISO_NOMBRE, nombreLibre } from './datos';
 
 const traducir = (mensaje = '') => {
     if (/invalid login credentials/i.test(mensaje)) return 'Correo o contraseña incorrectos.';
@@ -15,6 +15,7 @@ const Entrada = () => {
     const [modo, setModo] = useState('entrar'); // 'entrar' | 'registro' | 'recuperar'
     const [email, setEmail] = useState('');
     const [contrasena, setContrasena] = useState('');
+    const [nombre, setNombre] = useState('');
     const [ocupado, setOcupado] = useState(false);
     const [aviso, setAviso] = useState('');
 
@@ -24,7 +25,9 @@ const Entrada = () => {
         try {
             if (modo === 'entrar') await entrar(email.trim(), contrasena);
             else if (modo === 'registro') {
-                const { necesitaConfirmar } = await registrarse(email.trim(), contrasena);
+                if (!NOMBRE_VALIDO.test(nombre.trim())) { setAviso(AVISO_NOMBRE); return; }
+                if (!(await nombreLibre(nombre.trim()))) { setAviso(`El nombre «${nombre.trim()}» ya lo tiene otra persona.`); return; }
+                const { necesitaConfirmar } = await registrarse(email.trim(), contrasena, nombre.trim());
                 if (necesitaConfirmar) setAviso('Te hemos enviado un correo para confirmar la cuenta. Ábrelo y vuelve aquí.');
             } else {
                 await recuperarContrasena(email.trim());
@@ -51,6 +54,11 @@ const Entrada = () => {
                 <p className="text-center text-gray-400 mb-6">Busca y organiza las películas y series que ver.</p>
                 <div className="flex gap-1">{pestana('entrar', 'Entrar')}{pestana('registro', 'Crear cuenta')}</div>
                 <form onSubmit={enviar} className="bg-gray-800 border border-gray-700 rounded-b-xl p-6 flex flex-col gap-4 shadow-2xl">
+                    {modo === 'registro' && (
+                        <input type="text" required value={nombre} onChange={(e) => setNombre(e.target.value)} placeholder="Nombre de usuario (lo verán tus amigos)"
+                            autoComplete="username" maxLength={20}
+                            className="p-3 rounded-lg bg-gray-700 text-white border border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                    )}
                     <input type="email" required value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Correo" autoComplete="email"
                         className="p-3 rounded-lg bg-gray-700 text-white border border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500" />
                     {modo !== 'recuperar' && (

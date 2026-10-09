@@ -1,14 +1,11 @@
 import React, { useState } from 'react';
-import { compartirBiblioteca, dejarDeVer } from '../datos';
+import { compartirBiblioteca, cambiarCompartido, dejarDeVer } from '../datos';
 
 export const PESTANAS_COMPARTIBLES = [
     { clave: 'favorites', nombre: 'Favoritas', icono: '❤️' },
     { clave: 'pending', nombre: 'Pendientes', icono: '⏳' },
     { clave: 'watched', nombre: 'Vistas', icono: '👁️' },
 ];
-
-// Nombre corto de una cuenta: lo que va antes de la @ del correo.
-export const nombreDe = (email) => (email || '').split('@')[0] || email;
 
 const Casillas = ({ marcadas, onChange, desactivado }) => (
     <div className="flex flex-wrap gap-3">
@@ -29,7 +26,7 @@ const Casillas = ({ marcadas, onChange, desactivado }) => (
 
 // Ventana para compartir tu biblioteca: con quién compartes y qué pestañas, y quién comparte contigo.
 const CompartirModal = ({ isOpen, onClose, compartidos, onCambio }) => {
-    const [email, setEmail] = useState('');
+    const [destino, setDestino] = useState('');
     const [pestanas, setPestanas] = useState(PESTANAS_COMPARTIBLES.map(p => p.clave));
     const [aviso, setAviso] = useState('');
     const [ocupado, setOcupado] = useState(false);
@@ -55,14 +52,14 @@ const CompartirModal = ({ isOpen, onClose, compartidos, onCambio }) => {
 
     const compartir = async (e) => {
         e.preventDefault();
-        if (!email.trim()) { setAviso('Escribe el correo de la otra persona.'); return; }
+        if (!destino.trim()) { setAviso('Escribe el nombre de usuario de la otra persona.'); return; }
         if (pestanas.length === 0) { setAviso('Marca al menos una pestaña.'); return; }
-        const ok = await hacer(() => compartirBiblioteca(email.trim(), pestanas), `Compartido con ${email.trim()}.`);
-        if (ok) setEmail('');
+        const ok = await hacer(() => compartirBiblioteca(destino.trim(), pestanas), `Compartido con ${destino.trim()}.`);
+        if (ok) setDestino('');
     };
 
     const cambiarPestanas = (c, nuevas) => {
-        hacer(() => compartirBiblioteca(c.email, nuevas), nuevas.length === 0 ? `Ya no compartes nada con ${c.email}.` : '');
+        hacer(() => cambiarCompartido(c.usuario, nuevas), nuevas.length === 0 ? `Ya no compartes nada con ${c.nombre}.` : '');
     };
 
     return (
@@ -75,14 +72,14 @@ const CompartirModal = ({ isOpen, onClose, compartidos, onCambio }) => {
 
                 <form onSubmit={compartir} className="flex flex-col gap-3 bg-gray-900/50 border border-gray-700 rounded-lg p-4">
                     <p className="text-gray-300">
-                        Escribe el correo con el que la otra persona entra en BuscaPelis y marca qué pestañas quieres que vea
+                        Escribe el nombre de usuario de la otra persona en BuscaPelis y marca qué pestañas quieres que vea
                         (de películas y de series). Solo podrá mirarlas, no cambiarlas.
                     </p>
                     <input
-                        type="email"
-                        value={email}
-                        onChange={(e) => setEmail(e.target.value)}
-                        placeholder="correo@ejemplo.com"
+                        type="text"
+                        value={destino}
+                        onChange={(e) => setDestino(e.target.value)}
+                        placeholder="Nombre de usuario"
                         autoComplete="off"
                         className="p-2 rounded-lg bg-gray-700 text-white border border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
                     />
@@ -100,8 +97,8 @@ const CompartirModal = ({ isOpen, onClose, compartidos, onCambio }) => {
                         {doy.map(c => (
                             <li key={c.usuario} className="bg-gray-700/60 rounded-lg p-3 flex flex-col gap-2">
                                 <div className="flex justify-between items-center gap-2">
-                                    <span className="font-semibold text-white truncate">{c.email}</span>
-                                    <button disabled={ocupado} onClick={() => hacer(() => compartirBiblioteca(c.email, []), `Ya no compartes nada con ${c.email}.`)} className="px-3 py-1 rounded-full bg-gray-600 hover:bg-red-700 text-gray-100 text-xs whitespace-nowrap">Dejar de compartir</button>
+                                    <span className="font-semibold text-white truncate">{c.nombre}</span>
+                                    <button disabled={ocupado} onClick={() => hacer(() => cambiarCompartido(c.usuario, []), `Ya no compartes nada con ${c.nombre}.`)} className="px-3 py-1 rounded-full bg-gray-600 hover:bg-red-700 text-gray-100 text-xs whitespace-nowrap">Dejar de compartir</button>
                                 </div>
                                 <Casillas marcadas={c.pestanas} onChange={(nuevas) => cambiarPestanas(c, nuevas)} desactivado={ocupado} />
                             </li>
@@ -115,12 +112,12 @@ const CompartirModal = ({ isOpen, onClose, compartidos, onCambio }) => {
                         {recibo.map(c => (
                             <li key={c.usuario} className="bg-gray-700/60 rounded-lg p-3 flex justify-between items-center gap-2">
                                 <div className="min-w-0">
-                                    <p className="font-semibold text-white truncate">{c.email}</p>
+                                    <p className="font-semibold text-white truncate">{c.nombre}</p>
                                     <p className="text-gray-400">
                                         {PESTANAS_COMPARTIBLES.filter(p => c.pestanas.includes(p.clave)).map(p => `${p.icono} ${p.nombre}`).join('  ·  ')}
                                     </p>
                                 </div>
-                                <button disabled={ocupado} onClick={() => hacer(() => dejarDeVer(c.usuario), `Ya no verás la biblioteca de ${c.email}.`)} className="px-3 py-1 rounded-full bg-gray-600 hover:bg-red-700 text-gray-100 text-xs whitespace-nowrap">Dejar de verla</button>
+                                <button disabled={ocupado} onClick={() => hacer(() => dejarDeVer(c.usuario), `Ya no verás la biblioteca de ${c.nombre}.`)} className="px-3 py-1 rounded-full bg-gray-600 hover:bg-red-700 text-gray-100 text-xs whitespace-nowrap">Dejar de verla</button>
                             </li>
                         ))}
                     </ul>

@@ -7,12 +7,12 @@ import ExtendedInfoModal from './componentes/ExtendedInfoModal';
 import SeasonSelectorModal from './componentes/SeasonSelectorModal';
 import PlatformAnalysisModal from './componentes/PlatformAnalysisModal';
 import ContentCard from './componentes/ContentCard';
-import CompartirModal, { PESTANAS_COMPARTIBLES, nombreDe } from './componentes/CompartirModal';
+import CompartirModal, { PESTANAS_COMPARTIBLES } from './componentes/CompartirModal';
 import DualRangeSlider from './componentes/DualRangeSlider';
 
 
 // Main App component
-const App = ({ user }) => {
+const App = ({ user, nombre, onNombreCambiado }) => {
     const [searchType, setSearchType] = useState('movie'); 
     const currentYear = new Date().getFullYear();
     
@@ -180,7 +180,7 @@ const App = ({ user }) => {
             listaDeAmigo(a, p.clave, searchType).forEach(id => {
                 const lista = amigosPorObra[id] || (amigosPorObra[id] = []);
                 let entrada = lista.find(e => e.usuario === a.usuario);
-                if (!entrada) lista.push(entrada = { usuario: a.usuario, nombre: nombreDe(a.email), email: a.email, pestanas: [] });
+                if (!entrada) lista.push(entrada = { usuario: a.usuario, nombre: a.nombre, pestanas: [] });
                 entrada.pestanas.push(p.clave);
             });
         });
@@ -1061,7 +1061,7 @@ const App = ({ user }) => {
                 }
             `}</style>
             <div className="max-w-screen-xl mx-auto">
-                <BarraCuenta user={user} onCompartirClick={() => { recargarCompartidos(); setCompartirAbierto(true); }} geminiKey={geminiKey} onGeminiKeyChange={async (key) => {
+                <BarraCuenta user={user} nombre={nombre} onNombreCambiado={onNombreCambiado} onCompartirClick={() => { recargarCompartidos(); setCompartirAbierto(true); }} geminiKey={geminiKey} onGeminiKeyChange={async (key) => {
                     setGeminiKey(key);
                     await guardarPreferencias({ gemini_key: key });
                 }} />
@@ -1213,16 +1213,16 @@ const App = ({ user }) => {
                             {viewMode === 'pending' && '⏳ Tu Lista de Pendientes'}
                             {viewMode === 'watched' && '👁️ Lo que has visto'}
                             {viewMode === 'discarded' && '❌ Lo descartado'}
-                            {viewMode === 'amigos' && (amigoVisto ? `👥 Biblioteca de ${nombreDe(amigoVisto.email)}` : '👥 Amigos')}
+                            {viewMode === 'amigos' && (amigoVisto ? `👥 Biblioteca de ${amigoVisto.nombre}` : '👥 Amigos')}
                         </h2>
                         {viewMode === 'amigos' && (amigoVisto ? (
                             <div className="flex flex-col items-center gap-3 mb-4">
                                 {amigos.length > 1 && (
                                     <div className="flex flex-wrap justify-center gap-2">
                                         {amigos.map(a => (
-                                            <button key={a.usuario} onClick={() => setAmigoSel({ usuario: a.usuario, pestanas: amigoSel.pestanas })} title={a.email}
+                                            <button key={a.usuario} onClick={() => setAmigoSel({ usuario: a.usuario, pestanas: amigoSel.pestanas })}
                                                 className={`px-4 py-1 rounded-full text-sm font-semibold ${a.usuario === amigoVisto.usuario ? 'bg-blue-600 text-white' : 'bg-gray-700 text-gray-300 hover:bg-gray-600'}`}>
-                                                {nombreDe(a.email)}
+                                                {a.nombre}
                                             </button>
                                         ))}
                                     </div>

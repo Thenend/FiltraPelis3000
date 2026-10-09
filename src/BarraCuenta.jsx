@@ -1,18 +1,24 @@
 import React, { useState } from 'react';
-import { modoPrueba, salir, cambiarContrasena } from './datos';
+import { modoPrueba, salir, cambiarContrasena, ponerNombre, NOMBRE_VALIDO, AVISO_NOMBRE } from './datos';
 
-// Barra de arriba: con qué cuenta se ha entrado, compartir la biblioteca, la clave de Gemini para «Pregunta al IA» y salir.
-const BarraCuenta = ({ user, geminiKey, onGeminiKeyChange, onCompartirClick }) => {
-    const [panel, setPanel] = useState(null); // null | 'clave' | 'contrasena'
+// Barra de arriba: con qué cuenta se ha entrado (y cambiar el nombre de usuario), compartir la biblioteca, la clave de Gemini para «Pregunta al IA» y salir.
+const BarraCuenta = ({ user, nombre, onNombreCambiado, geminiKey, onGeminiKeyChange, onCompartirClick }) => {
+    const [panel, setPanel] = useState(null); // null | 'nombre' | 'clave' | 'contrasena'
     const [valor, setValor] = useState('');
     const [aviso, setAviso] = useState('');
 
-    const abrir = (cual) => { setPanel(panel === cual ? null : cual); setValor(cual === 'clave' ? geminiKey : ''); setAviso(''); };
+    const abrir = (cual) => { setPanel(panel === cual ? null : cual); setValor(cual === 'clave' ? geminiKey : cual === 'nombre' ? (nombre || '') : ''); setAviso(''); };
 
     const guardar = async (e) => {
         e.preventDefault();
         try {
-            if (panel === 'clave') {
+            if (panel === 'nombre') {
+                const limpio = valor.trim();
+                if (!NOMBRE_VALIDO.test(limpio)) { setAviso(AVISO_NOMBRE); return; }
+                await ponerNombre(limpio);
+                onNombreCambiado(limpio);
+                setAviso('Nombre cambiado.');
+            } else if (panel === 'clave') {
                 await onGeminiKeyChange(valor.trim());
                 setAviso(valor.trim() ? 'Clave guardada en tu cuenta.' : 'Clave borrada.');
             } else {
@@ -31,7 +37,11 @@ const BarraCuenta = ({ user, geminiKey, onGeminiKeyChange, onCompartirClick }) =
     return (
         <div className="mb-2">
             <div className="flex flex-wrap items-center justify-end gap-2 text-sm text-gray-400">
-                <span className="truncate">{modoPrueba ? '🧪 Modo de prueba (los datos se guardan solo en este navegador)' : user.email}</span>
+                {modoPrueba ? <span className="truncate">🧪 Modo de prueba (los datos se guardan solo en este navegador)</span> : (
+                    <button onClick={() => abrir('nombre')} title={`${user.email}\nPulsa para cambiar tu nombre de usuario`} className="truncate hover:text-gray-200">
+                        👤 {nombre || user.email}
+                    </button>
+                )}
                 {!modoPrueba && <button onClick={onCompartirClick} className={boton}>👥 Compartir</button>}
                 <button onClick={() => abrir('clave')} className={boton}>🔑 Clave de IA</button>
                 {!modoPrueba && <button onClick={() => abrir('contrasena')} className={boton}>Contraseña</button>}
@@ -39,7 +49,12 @@ const BarraCuenta = ({ user, geminiKey, onGeminiKeyChange, onCompartirClick }) =
             </div>
             {panel && (
                 <form onSubmit={guardar} className="mt-3 ml-auto max-w-md bg-gray-800 border border-gray-700 rounded-xl p-4 flex flex-col gap-3 text-sm">
-                    {panel === 'clave' ? (
+                    {panel === 'nombre' ? (
+                        <p className="text-gray-300">
+                            Tu nombre de usuario es lo que ven tus amigos en vez de tu correo, y con él te pueden compartir su
+                            biblioteca. De 3 a 20 letras, números, puntos o guiones, sin espacios.
+                        </p>
+                    ) : panel === 'clave' ? (
                         <p className="text-gray-300">
                             «Pregunta al IA» usa Gemini de Google. Crea una clave gratis en{' '}
                             <a href="https://aistudio.google.com/apikey" target="_blank" rel="noreferrer" className="text-blue-400 underline">Google AI Studio</a>{' '}
@@ -49,11 +64,12 @@ const BarraCuenta = ({ user, geminiKey, onGeminiKeyChange, onCompartirClick }) =
                         <p className="text-gray-300">Escribe la contraseña nueva.</p>
                     )}
                     <input
-                        type={panel === 'clave' ? 'text' : 'password'}
+                        type={panel === 'contrasena' ? 'password' : 'text'}
+                        maxLength={panel === 'nombre' ? 20 : undefined}
                         value={valor}
                         onChange={(e) => setValor(e.target.value)}
-                        autoComplete={panel === 'clave' ? 'off' : 'new-password'}
-                        placeholder={panel === 'clave' ? 'AIza…' : 'Contraseña nueva'}
+                        autoComplete={panel === 'contrasena' ? 'new-password' : panel === 'nombre' ? 'username' : 'off'}
+                        placeholder={panel === 'nombre' ? 'Nombre de usuario' : panel === 'clave' ? 'AIza…' : 'Contraseña nueva'}
                         className="p-2 rounded-lg bg-gray-700 text-white border border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
                     />
                     <div className="flex items-center gap-2">

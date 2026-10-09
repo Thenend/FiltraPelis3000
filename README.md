@@ -29,7 +29,9 @@ el ordenador, la tablet o el móvil, y se actualizan solas si cambias algo en ot
 
 ## Primeros pasos
 ### 1. Crear la cuenta
-Abre la web, pulsa **Crear cuenta** y escribe tu correo y una contraseña.
+Abre la web, pulsa **Crear cuenta** y escribe tu nombre de usuario, tu correo y una contraseña. El nombre de usuario es lo
+que ven los demás en vez de tu correo; se cambia pulsando en él (arriba a la derecha). Las cuentas creadas antes lo
+eligen la próxima vez que entran.
 
 ### 2. Traer tus datos de Gemini Canvas
 1. En la aplicación de Gemini Canvas, pulsa **💾 Guardar Backup** (abajo del todo): descarga un archivo `.json`.
@@ -37,7 +39,7 @@ Abre la web, pulsa **Crear cuenta** y escribe tu correo y una contraseña.
    serie y tus plataformas.
 
 ### 3. Compartir tu biblioteca (opcional)
-Pulsa **👥 Compartir** (arriba a la derecha), escribe el correo con el que la otra persona entra en la web y marca qué
+Pulsa **👥 Compartir** (arriba a la derecha), escribe el nombre de usuario de la otra persona y marca qué
 pestañas puede ver (**Favoritas**, **Pendientes**, **Vistas**; de películas y de series). Solo podrá mirarlas. Puedes
 cambiar las pestañas o dejar de compartir cuando quieras. Lo que otros te comparten aparece en la pestaña **👥 Amigos**,
 y en cualquier tarjeta se ve qué amigos la tienen en esas pestañas (p. ej. «👥 ana ❤️»).
@@ -54,9 +56,10 @@ npm run build
 ```
 - `src/App.jsx`: la aplicación (la misma de Gemini Canvas, guardando en Supabase en vez de Firestore).
 - `src/datos.js`: cuentas y guardado (Supabase, o el navegador en modo de prueba).
-- `src/Entrada.jsx`, `src/BarraCuenta.jsx`: entrar, crear cuenta, contraseña, clave de IA y salir.
+- `src/Entrada.jsx`, `src/ElegirNombre.jsx`, `src/BarraCuenta.jsx`: entrar, crear cuenta, nombre de usuario,
+  contraseña, clave de IA y salir.
 - `src/componentes/`: las tarjetas, el selector de rangos y las ventanas (temporadas, ficha de OMDb, plataformas).
 - `src/notas.js`: notas de OMDb ya consultadas, guardadas en el navegador.
 - `src/componentes/CompartirModal.jsx`: la ventana de compartir la biblioteca.
-- `supabase/esquema.sql`: las tablas `preferencias`, `compartidos` y `omdb_cache`, sus permisos y las funciones que guardan
+- `supabase/esquema.sql`: las tablas `preferencias`, `perfiles` (nombres de usuario), `compartidos` y `omdb_cache`, sus permisos y las funciones que guardan
   cada cambio y las que comparten la biblioteca (cada persona solo recibe las pestañas que le han compartido).

@@ -46,9 +46,11 @@ export const entrar = async (email, contrasena) => {
     if (error) throw error;
 };
 
-export const registrarse = async (email, contrasena) => {
+// El nombre de usuario se guarda al crear la cuenta (función «nombre_al_registrarse» de supabase/esquema.sql).
+export const registrarse = async (email, contrasena, nombre) => {
     const { data, error } = await supabase.auth.signUp({
-        email, password: contrasena, options: { emailRedirectTo: window.location.origin + window.location.pathname },
+        email, password: contrasena,
+        options: { emailRedirectTo: window.location.origin + window.location.pathname, data: { nombre } },
     });
     if (error) throw error;
     return { necesitaConfirmar: !data.session };
@@ -63,6 +65,31 @@ export const recuperarContrasena = async (email) => {
 
 export const cambiarContrasena = async (contrasena) => {
     const { error } = await supabase.auth.updateUser({ password: contrasena });
+    if (error) throw error;
+};
+
+// ---------- Nombre de usuario ----------
+// Lo que ven los demás en vez del correo. De 3 a 20 letras, números, «.», «_» o «-», y distinto del de los demás.
+
+export const NOMBRE_VALIDO = /^[A-Za-z0-9ÁÉÍÓÚÜÑáéíóúüñ_.-]{3,20}$/;
+export const AVISO_NOMBRE = 'El nombre debe tener de 3 a 20 letras, números, puntos, guiones o guiones bajos (sin espacios).';
+
+// El nombre de quien ha entrado, o null si aún no ha elegido uno.
+export const miNombre = async () => {
+    if (modoPrueba) return USUARIO_PRUEBA.email;
+    const { data, error } = await supabase.rpc('mi_nombre');
+    if (error) throw error;
+    return data;
+};
+
+export const nombreLibre = async (nombre) => {
+    const { data, error } = await supabase.rpc('nombre_libre', { p_nombre: nombre });
+    if (error) throw error;
+    return data;
+};
+
+export const ponerNombre = async (nombre) => {
+    const { error } = await supabase.rpc('poner_nombre', { p_nombre: nombre });
     if (error) throw error;
 };
 
@@ -136,12 +163,12 @@ export const suscribirPreferencias = (usuarioId, callback) => {
 
 // ---------- Bibliotecas compartidas ----------
 // Quién ve tus pestañas y quién te deja ver las suyas. Supabase solo devuelve las listas de las pestañas que esa persona
-// te ha compartido (función «compartidos» de supabase/esquema.sql).
+// te ha compartido (función «bibliotecas_compartidas» de supabase/esquema.sql).
 
-// [{ direccion: 'doy' | 'recibo', usuario, email, pestanas: ['favorites', …], listas: { favorites_movie: [ids], … } }]
+// [{ direccion: 'doy' | 'recibo', usuario, nombre, pestanas: ['favorites', …], listas: { favorites_movie: [ids], … } }]
 export const cargarCompartidos = async () => {
     if (modoPrueba) return [];
-    const { data, error } = await supabase.rpc('compartidos');
+    const { data, error } = await supabase.rpc('bibliotecas_compartidas');
     if (error) throw error;
     return data || [];
 };
@@ -150,10 +177,17 @@ const sinModoPrueba = () => {
     if (modoPrueba) throw new Error('En el modo de prueba no se puede compartir.');
 };
 
-// Comparte con la cuenta de ese correo las pestañas indicadas (o cambia cuáles). Sin pestañas, deja de compartir.
-export const compartirBiblioteca = async (email, pestanas) => {
+// Comparte con la cuenta de ese nombre de usuario (o correo) las pestañas indicadas.
+export const compartirBiblioteca = async (destino, pestanas) => {
     sinModoPrueba();
-    const { error } = await supabase.rpc('compartir_biblioteca', { p_email: email, p_pestanas: pestanas });
+    const { error } = await supabase.rpc('compartir_biblioteca', { p_email: destino, p_pestanas: pestanas });
+    if (error) throw error;
+};
+
+// Cambia qué pestañas compartes con alguien con quien ya compartes. Sin pestañas, deja de compartir.
+export const cambiarCompartido = async (usuarioId, pestanas) => {
+    sinModoPrueba();
+    const { error } = await supabase.rpc('cambiar_compartido', { p_invitado: usuarioId, p_pestanas: pestanas });
     if (error) throw error;
 };
 
