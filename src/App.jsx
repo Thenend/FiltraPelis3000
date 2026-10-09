@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { marked } from 'marked';
 import { cargarPreferencias, guardarPreferencias, suscribirPreferencias } from './datos';
 import BarraCuenta from './BarraCuenta';
+import { notaGuardada, guardarNotas } from './notas';
 
 // --- Components ---
 
@@ -859,6 +860,7 @@ const App = ({ user }) => {
         setContent([]);
         setLastSearchResults([]);
         setItemProvidersCache({});
+        setOmdbCache({}); // una película y una serie pueden tener el mismo número en TMDB
     }, [TMDB_API_KEY, searchType]); 
 
     const handleProviderChange = (e) => {
@@ -1143,9 +1145,19 @@ const App = ({ user }) => {
         }
 
         const fetchExternalRatingsForAll = async () => {
-            const itemsToFetch = content.filter(item => !omdbCache[item.id]);
+            // Primero, las notas que este navegador ya consultó: no gastan consultas de OMDb.
+            const guardadas = {};
+            content.forEach(item => {
+                if (omdbCache[item.id]) return;
+                const n = notaGuardada(searchType, item.id);
+                if (n) guardadas[item.id] = n;
+            });
+            const cacheConGuardadas = Object.keys(guardadas).length > 0 ? { ...omdbCache, ...guardadas } : omdbCache;
+            if (cacheConGuardadas !== omdbCache) setOmdbCache(cacheConGuardadas);
+
+            const itemsToFetch = content.filter(item => !cacheConGuardadas[item.id]);
             if (itemsToFetch.length === 0) {
-                if (!isCancelled) sortContentByExternal(sortBy);
+                if (!isCancelled) sortContentByExternal(sortBy, cacheConGuardadas);
                 return;
             }
 
@@ -1160,6 +1172,7 @@ const App = ({ user }) => {
                 if (isCancelled) break; 
                 const chunk = itemsToFetch.slice(i, i + chunkSize);
                 let currentBatchCache = {};
+                let paraGuardar = {}; // solo respuestas buenas: si OMDb falla (p. ej. sin consultas), se vuelve a intentar otro día
 
                 await Promise.all(chunk.map(async (item) => {
                     try {
@@ -1173,11 +1186,13 @@ const App = ({ user }) => {
                             if (omdbRes.ok) {
                                 const omdbData = await omdbRes.json();
                                 currentBatchCache[item.id] = { imdb: omdbData.imdbRating && omdbData.imdbRating !== 'N/A' ? parseFloat(omdbData.imdbRating) : 0, rt: parseOmdbRating(omdbData, 'Rotten Tomatoes'), meta: parseOmdbRating(omdbData, 'Metacritic') };
+                                if (omdbData.Response === 'True') paraGuardar[item.id] = currentBatchCache[item.id];
                             } else currentBatchCache[item.id] = { imdb: 0, rt: 0, meta: 0 }; 
-                        } else currentBatchCache[item.id] = { imdb: 0, rt: 0, meta: 0 }; 
+                        } else paraGuardar[item.id] = currentBatchCache[item.id] = { imdb: 0, rt: 0, meta: 0 }; 
                     } catch (e) { console.error("Error fetching rating for", item.title, e); }
                 }));
 
+                guardarNotas(searchType, paraGuardar);
                 if (isCancelled) break;
 
                 setOmdbCache(prev => {
