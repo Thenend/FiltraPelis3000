@@ -87,6 +87,35 @@ export const guardarPreferencias = async (cambios) => {
     if (error) throw error;
 };
 
+// Pone o quita una obra de una lista. Se cambia solo esa obra (no la lista entera), así que dos cambios a la vez desde
+// el móvil y el ordenador no se pisan.
+export const ponerEnLista = async (clave, id, poner) => {
+    if (modoPrueba) {
+        const lista = leerLocal()[clave] || [];
+        const nueva = poner ? (lista.includes(id) ? lista : [...lista, id]) : lista.filter(x => x !== id);
+        return guardarPreferencias({ [clave]: nueva });
+    }
+    const { error } = await supabase.rpc('poner_en_lista', { p_clave: clave, p_id: id, p_poner: poner, p_pestana: pestana });
+    if (error) throw error;
+};
+
+// Guarda las temporadas vistas y en curso de una serie y si está vista entera, sin tocar las demás series.
+export const guardarTemporadas = async (serieId, vistas, viendo, entera) => {
+    if (modoPrueba) {
+        const d = leerLocal();
+        const lista = d.watched_tv || [];
+        return guardarPreferencias({
+            watchedSeasons_tv: { ...(d.watchedSeasons_tv || {}), [serieId]: vistas },
+            watchingSeasons_tv: { ...(d.watchingSeasons_tv || {}), [serieId]: viendo },
+            watched_tv: entera ? (lista.includes(serieId) ? lista : [...lista, serieId]) : lista.filter(x => x !== serieId),
+        });
+    }
+    const { error } = await supabase.rpc('guardar_temporadas', {
+        p_serie: serieId, p_vistas: vistas, p_viendo: viendo, p_entera: entera, p_pestana: pestana,
+    });
+    if (error) throw error;
+};
+
 // Avisa cuando las preferencias cambian desde otro dispositivo u otra pestaña.
 export const suscribirPreferencias = (usuarioId, callback) => {
     if (modoPrueba) {
@@ -103,4 +132,16 @@ export const suscribirPreferencias = (usuarioId, callback) => {
             })
         .subscribe();
     return () => { supabase.removeChannel(canal); };
+};
+
+// ---------- Notas de OMDb ----------
+
+// Pide a OMDb los datos de una obra a través de la función «omdb» de Supabase, que guarda la clave en secreto.
+// Devuelve siempre la respuesta de OMDb ({ Response: 'True', … } o { Response: 'False', Error }).
+export const consultarOmdb = async (imdbId, plot = 'short') => {
+    if (modoPrueba) return { Response: 'False', Error: 'En el modo de prueba no se consultan las notas.' };
+    const { data, error } = await supabase.functions.invoke('omdb', { body: { i: imdbId, plot } });
+    if (!error) return data;
+    const cuerpo = await error.context?.json?.().catch(() => null);
+    return cuerpo?.Error ? cuerpo : { Response: 'False', Error: 'Error de conexión con OMDb.' };
 };
