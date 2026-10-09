@@ -43,8 +43,9 @@ const App = ({ user }) => {
     // Con quién compartes y quién comparte contigo (con sus listas de las pestañas compartidas). Ver datos.js.
     const [compartidos, setCompartidos] = useState([]);
     const [compartirAbierto, setCompartirAbierto] = useState(false);
-    // Qué amigo y qué pestaña suya se ven en la pestaña «Amigos».
-    const [amigoSel, setAmigoSel] = useState({ usuario: null, pestana: null });
+    // Qué amigo y qué pestañas suyas (se pueden marcar varias, o ninguna) se ven en la pestaña «Amigos».
+    // Con pestanas a null, la primera que comparte.
+    const [amigoSel, setAmigoSel] = useState({ usuario: null, pestanas: null });
 
     // --- Filters ---
     const [genres, setGenres] = useState([]);
@@ -165,8 +166,10 @@ const App = ({ user }) => {
 
     const amigos = compartidos.filter(c => c.direccion === 'recibo');
     const amigoVisto = amigos.find(a => a.usuario === amigoSel.usuario) || amigos[0];
-    const pestanaVista = amigoVisto && (amigoVisto.pestanas.includes(amigoSel.pestana) ? amigoSel.pestana
-        : PESTANAS_COMPARTIBLES.map(p => p.clave).find(p => amigoVisto.pestanas.includes(p)));
+    const pestanasVistas = !amigoVisto ? [] : PESTANAS_COMPARTIBLES.map(p => p.clave).filter(p => amigoVisto.pestanas.includes(p))
+        .filter((p, i) => amigoSel.pestanas ? amigoSel.pestanas.includes(p) : i === 0);
+    const marcarPestanaAmigo = (pestana) => setAmigoSel({ usuario: amigoVisto.usuario,
+        pestanas: pestanasVistas.includes(pestana) ? pestanasVistas.filter(p => p !== pestana) : [...pestanasVistas, pestana] });
     const listaDeAmigo = (amigo, pestana, tipo) => amigo?.listas?.[`${pestana}_${tipo}`] || [];
 
     // Para cada obra (del tipo actual), qué amigos la tienen y en qué pestañas compartidas: { id: [{ nombre, pestanas }] }
@@ -185,11 +188,11 @@ const App = ({ user }) => {
 
     // Las obras de la pestaña que se está viendo (las tuyas, o las del amigo elegido en «Amigos»).
     const listaDeVista = () => {
-        if (viewMode === 'amigos') return pestanaVista ? listaDeAmigo(amigoVisto, pestanaVista, searchType) : [];
+        if (viewMode === 'amigos') return [...new Set(pestanasVistas.flatMap(p => listaDeAmigo(amigoVisto, p, searchType)))];
         const currentLists = userLists[searchType];
         return viewMode === 'favorites' ? currentLists.favorites : viewMode === 'pending' ? currentLists.pending : viewMode === 'watched' ? currentLists.watched : currentLists.discarded;
     };
-    const claveVistaAmigo = viewMode === 'amigos' ? `${searchType}_${amigoVisto?.usuario}_${pestanaVista}` : '';
+    const claveVistaAmigo = viewMode === 'amigos' ? `${searchType}_${amigoVisto?.usuario}_${pestanasVistas.join('+')}` : '';
     const idsVistaAmigo = viewMode === 'amigos' ? listaDeVista().join(',') : '';
 
     const updateStreamingPrefsInFirestore = async (newSelected, newFilterState) => {
@@ -1217,7 +1220,7 @@ const App = ({ user }) => {
                                 {amigos.length > 1 && (
                                     <div className="flex flex-wrap justify-center gap-2">
                                         {amigos.map(a => (
-                                            <button key={a.usuario} onClick={() => setAmigoSel({ usuario: a.usuario, pestana: pestanaVista })} title={a.email}
+                                            <button key={a.usuario} onClick={() => setAmigoSel({ usuario: a.usuario, pestanas: amigoSel.pestanas })} title={a.email}
                                                 className={`px-4 py-1 rounded-full text-sm font-semibold ${a.usuario === amigoVisto.usuario ? 'bg-blue-600 text-white' : 'bg-gray-700 text-gray-300 hover:bg-gray-600'}`}>
                                                 {nombreDe(a.email)}
                                             </button>
@@ -1226,12 +1229,13 @@ const App = ({ user }) => {
                                 )}
                                 <div className="flex flex-wrap justify-center gap-2">
                                     {PESTANAS_COMPARTIBLES.filter(p => amigoVisto.pestanas.includes(p.clave)).map(p => (
-                                        <button key={p.clave} onClick={() => setAmigoSel({ usuario: amigoVisto.usuario, pestana: p.clave })}
-                                            className={`px-4 py-1 rounded-full text-sm font-semibold ${p.clave === pestanaVista ? 'bg-indigo-600 text-white' : 'bg-gray-700 text-gray-300 hover:bg-gray-600'}`}>
+                                        <button key={p.clave} onClick={() => marcarPestanaAmigo(p.clave)} title="Pulsa para marcar o desmarcar"
+                                            className={`px-4 py-1 rounded-full text-sm font-semibold ${pestanasVistas.includes(p.clave) ? 'bg-indigo-600 text-white' : 'bg-gray-700 text-gray-300 hover:bg-gray-600'}`}>
                                             {p.icono} {p.nombre} ({listaDeAmigo(amigoVisto, p.clave, searchType).length})
                                         </button>
                                     ))}
                                 </div>
+                                {pestanasVistas.length === 0 && <p className="text-gray-400 text-sm">Marca una o varias pestañas para ver sus películas y series.</p>}
                             </div>
                         ) : (
                             <p className="text-gray-400 mb-4">Ya nadie comparte su biblioteca contigo.</p>
