@@ -47,7 +47,7 @@ const Entrada = () => {
     return (
         <div className="min-h-screen bg-gradient-to-br from-gray-900 to-gray-800 text-white flex items-center justify-center p-4">
             <div className="w-full max-w-sm">
-                <h1 className="text-4xl font-extrabold text-center mb-2">🎬 BuscaPelis</h1>
+                <h1 className="text-4xl font-extrabold text-center mb-2">🎬 BuscaPelis 3000</h1>
                 <p className="text-center text-gray-400 mb-6">Busca y organiza las películas y series que ver.</p>
                 <div className="flex gap-1">{pestana('entrar', 'Entrar')}{pestana('registro', 'Crear cuenta')}</div>
                 <form onSubmit={enviar} className="bg-gray-800 border border-gray-700 rounded-b-xl p-6 flex flex-col gap-4 shadow-2xl">

@@ -1,4 +1,4 @@
-# BuscaPelis
+# BuscaPelis 3000
 
 Web para buscar películas y series (TMDB), ver sus notas de IMDb, Rotten Tomatoes y Metacritic (OMDb), saber en qué
 plataformas están en España y organizarlas en **Favoritas**, **Pendientes**, **Vistas** (en series, por temporadas) y
@@ -9,7 +9,7 @@ cuentas y los datos), gratis los dos. Cada persona entra con su correo y tiene s
 el ordenador, la tablet o el móvil, y se actualizan solas si cambias algo en otro dispositivo.
 
 ## Dirección
-<https://thenend.github.io/FiltraPelis3000/>
+<https://thenend.github.io/BuscaPelis3000/>
 
 ## Cómo está montada
 - **Supabase**: proyecto `buscapelis` (región West EU). La tabla y los permisos están en
