@@ -55,6 +55,8 @@ const App = ({ user, nombre, onNombreCambiado }) => {
     // Fecha de la recomendación más nueva que ya has visto, de películas y de series: { movie, tv }. Se guarda en tus
     // preferencias, así vale en todos tus dispositivos; las posteriores son «nuevas». undefined mientras cargan.
     const [recVistas, setRecVistas] = useState(undefined);
+    // Qué se ve en «Recomendadas»: las que tienes por mirar, todas las que te han recomendado o las que has recomendado tú.
+    const [recModo, setRecModo] = useState('porMirar');
     // Las que eran nuevas al abrir «Recomendadas», para marcarlas mientras sigas ahí.
     const [recResaltadas, setRecResaltadas] = useState([]);
     const [avisoRecCerrado, setAvisoRecCerrado] = useState(false);
@@ -207,39 +209,54 @@ const App = ({ user, nombre, onNombreCambiado }) => {
         });
     });
 
-    // Para cada obra (del tipo actual), quién te la ha recomendado: { id: [{ id, nombre, nota, nueva }] }
-    const recomendacionesPorObra = {};
-    recomendaciones.filter(r => r.tipo === searchType).forEach(r => {
-        (recomendacionesPorObra[r.obra] || (recomendacionesPorObra[r.obra] = [])).push({ ...r, nueva: recResaltadas.includes(r.id) });
-    });
-    const recomendadas = Object.keys(recomendacionesPorObra).map(Number);
+    // Las que te han hecho (todas, y las que aún no has pasado a Pendientes ni quitado) y las que has hecho tú.
+    const recRecibidas = recomendaciones.filter(r => r.direccion === 'recibida');
+    const recPorMirar = recRecibidas.filter(r => !r.archivada);
+    const recHechas = recomendaciones.filter(r => r.direccion === 'hecha');
 
-    // A quién se puede recomendar con un clic: con quien compartes, quien comparte contigo y quien te ha recomendado algo.
+    // Para cada obra (del tipo actual), quién te la ha recomendado y a quién se la has recomendado tú:
+    // { id: [{ id, nombre, nota, archivada, nueva }] } y { id: [{ id, nombre, nota }] }
+    const agrupar = (lista) => {
+        const porObra = {};
+        lista.filter(r => r.tipo === searchType).forEach(r => {
+            (porObra[r.obra] || (porObra[r.obra] = [])).push({ ...r, nueva: recResaltadas.includes(r.id) });
+        });
+        return porObra;
+    };
+    const recibidasPorObra = agrupar(recRecibidas);
+    const hechasPorObra = agrupar(recHechas);
+    const obrasDe = (lista) => [...new Set(lista.filter(r => r.tipo === searchType).map(r => r.obra))];
+    const recomendadas = obrasDe(recPorMirar);
+    const obrasRecModo = recModo === 'hechas' ? obrasDe(recHechas) : recModo === 'recibidas' ? obrasDe(recRecibidas) : recomendadas;
+
+    // A quién se puede recomendar con un clic: con quien compartes, quien comparte contigo y con quien te has
+    // recomendado algo.
     const amigosParaRecomendar = [];
-    [...compartidos.map(c => ({ usuario: c.usuario, nombre: c.nombre })), ...recomendaciones.map(r => ({ usuario: r.de, nombre: r.nombre }))]
+    [...compartidos.map(c => ({ usuario: c.usuario, nombre: c.nombre })), ...recomendaciones.map(r => ({ usuario: r.usuario, nombre: r.nombre }))]
         .forEach(a => { if (!amigosParaRecomendar.some(x => x.usuario === a.usuario)) amigosParaRecomendar.push(a); });
     amigosParaRecomendar.sort((a, b) => a.nombre.localeCompare(b.nombre));
 
     // Recomendaciones nuevas (de películas y de series): las que llegaron después de la última que viste de ese tipo.
     const recNuevas = recVistas === undefined ? []
-        : recomendaciones.filter(r => !recVistas[r.tipo] || new Date(r.creada) > new Date(recVistas[r.tipo]));
+        : recPorMirar.filter(r => !recVistas[r.tipo] || new Date(r.creada) > new Date(recVistas[r.tipo]));
     const recNuevasAqui = recNuevas.filter(r => r.tipo === searchType);
 
     // Al abrir «Recomendadas», las de este tipo dejan de ser nuevas (pero se siguen marcando mientras estés ahí).
     useEffect(() => {
         if (viewMode !== 'recomendadas') { setRecResaltadas([]); return; }
-        if (recNuevasAqui.length === 0) return;
+        if (recNuevasAqui.length === 0 || recModo === 'hechas') return;
         setRecResaltadas(prev => [...prev, ...recNuevasAqui.map(r => r.id)]);
         const masNueva = recNuevasAqui.reduce((max, r) => (new Date(r.creada) > new Date(max) ? r.creada : max), recNuevasAqui[0].creada);
         setRecVistas(prev => ({ ...prev, [searchType]: masNueva }));
         guardarPreferencias({ recomendadas_vistas: { ...recVistas, [searchType]: masNueva } })
             .catch(error => console.error("Error saving seen recommendations:", error));
-    }, [viewMode, searchType, recNuevasAqui.map(r => r.id).join(',')]);
+    }, [viewMode, searchType, recModo, recNuevasAqui.map(r => r.id).join(',')]);
 
     // «Ver» del aviso: abre «Recomendadas» en Películas o Series, donde esté la más nueva.
     const verRecomendadasNuevas = () => {
         const tipo = recNuevas[0]?.tipo || searchType;
         recargarRecomendaciones();
+        setRecModo('porMirar');
         if (tipo === searchType) setViewMode('recomendadas');
         else { vistaTrasCambiarTipo.current = 'recomendadas'; setSearchType(tipo); }
     };
@@ -249,7 +266,7 @@ const App = ({ user, nombre, onNombreCambiado }) => {
     // «⏳ A pendientes» en «Recomendadas»: la pone en Pendientes (si no estaba) y la quita de Recomendadas.
     const quitarDeRecomendadas = async (id, aPendientes) => {
         const tipo = searchType;
-        setRecomendaciones(prev => prev.filter(r => !(r.tipo === tipo && r.obra === id)));
+        setRecomendaciones(prev => prev.map(r => r.direccion === 'recibida' && r.tipo === tipo && r.obra === id ? { ...r, archivada: true } : r));
         try {
             if (aPendientes && !userLists[tipo].pending.includes(id)) {
                 setUserLists(prev => ({ ...prev, [tipo]: { ...prev[tipo], pending: [...prev[tipo].pending, id] } }));
@@ -265,14 +282,14 @@ const App = ({ user, nombre, onNombreCambiado }) => {
 
     // Las obras de la pestaña que se está viendo (las tuyas, las del amigo elegido en «Amigos» o las recomendadas).
     const listaDeVista = () => {
-        if (viewMode === 'recomendadas') return recomendadas;
+        if (viewMode === 'recomendadas') return obrasRecModo;
         if (viewMode === 'amigos') return [...new Set(pestanasVistas.flatMap(p => listaDeAmigo(amigoVisto, p, searchType)))];
         const currentLists = userLists[searchType];
         return viewMode === 'favorites' ? currentLists.favorites : viewMode === 'pending' ? currentLists.pending : viewMode === 'watched' ? currentLists.watched : currentLists.discarded;
     };
     // En «Amigos» y «Recomendadas» la lista viene de otras personas: qué se está viendo y qué obras tiene ahora.
     const claveVistaAmigo = viewMode === 'amigos' ? `${searchType}_${amigoVisto?.usuario}_${pestanasVistas.join('+')}`
-        : viewMode === 'recomendadas' ? `${searchType}_recomendadas` : '';
+        : viewMode === 'recomendadas' ? `${searchType}_recomendadas_${recModo}` : '';
     const idsVistaAmigo = viewMode === 'amigos' || viewMode === 'recomendadas' ? listaDeVista().join(',') : '';
 
     const updateStreamingPrefsInFirestore = async (newSelected, newFilterState) => {
@@ -1170,7 +1187,7 @@ const App = ({ user, nombre, onNombreCambiado }) => {
                     <button onClick={() => setViewMode('pending')} className={getTabClass('pending')}>⏳ Pendientes ({currentLists.pending.length})</button>
                     <button onClick={() => setViewMode('watched')} className={getTabClass('watched')}>👁️ Vistas ({currentLists.watched.length})</button>
                     <button onClick={() => setViewMode('discarded')} className={getTabClass('discarded')}>❌ Descartadas ({currentLists.discarded.length})</button>
-                    {(recomendaciones.length > 0 || viewMode === 'recomendadas') && <button onClick={() => { recargarRecomendaciones(); setViewMode('recomendadas'); }} className={getTabClass('recomendadas')}>💌 Recomendadas ({recomendadas.length}){recNuevasAqui.length > 0 && viewMode !== 'recomendadas' && <span className="ml-1.5 bg-rose-600 text-white text-xs font-bold rounded-full px-1.5 py-0.5" title="Nuevas">{recNuevasAqui.length} nueva{recNuevasAqui.length > 1 ? 's' : ''}</span>}</button>}
+                    {(recomendaciones.length > 0 || viewMode === 'recomendadas') && <button onClick={() => { recargarRecomendaciones(); setRecModo('porMirar'); setViewMode('recomendadas'); }} className={getTabClass('recomendadas')}>💌 Recomendadas ({recomendadas.length}){recNuevasAqui.length > 0 && viewMode !== 'recomendadas' && <span className="ml-1.5 bg-rose-600 text-white text-xs font-bold rounded-full px-1.5 py-0.5" title="Nuevas">{recNuevasAqui.length} nueva{recNuevasAqui.length > 1 ? 's' : ''}</span>}</button>}
                     {amigos.length > 0 && <button onClick={() => { recargarCompartidos(); setViewMode('amigos'); }} className={getTabClass('amigos')}>👥 Amigos</button>}
                 </div>
                 
@@ -1308,15 +1325,31 @@ const App = ({ user, nombre, onNombreCambiado }) => {
                             {viewMode === 'pending' && '⏳ Tu Lista de Pendientes'}
                             {viewMode === 'watched' && '👁️ Lo que has visto'}
                             {viewMode === 'discarded' && '❌ Lo descartado'}
-                            {viewMode === 'recomendadas' && '💌 Te las recomiendan'}
+                            {viewMode === 'recomendadas' && (recModo === 'hechas' ? '📤 Las que has recomendado' : '💌 Te las recomiendan')}
                             {viewMode === 'amigos' && (amigoVisto ? `👥 Biblioteca de ${amigoVisto.nombre}` : '👥 Amigos')}
                         </h2>
                         {viewMode === 'recomendadas' && (
-                            <p className="text-gray-400 mb-4">
-                                {recomendadas.length > 0
-                                    ? 'Pásalas a Pendientes o quítalas de aquí cuando quieras.'
-                                    : `No tienes ${searchType === 'movie' ? 'películas' : 'series'} recomendadas.`}
-                            </p>
+                            <div className="flex flex-col items-center gap-3 mb-4">
+                                <div className="flex flex-wrap justify-center gap-2">
+                                    {[
+                                        { modo: 'porMirar', texto: `📥 Por mirar (${recomendadas.length})` },
+                                        { modo: 'recibidas', texto: `💌 Todas las que te recomendaron (${obrasDe(recRecibidas).length})` },
+                                        { modo: 'hechas', texto: `📤 Las que has recomendado (${obrasDe(recHechas).length})` },
+                                    ].map(m => (
+                                        <button key={m.modo} onClick={() => setRecModo(m.modo)}
+                                            className={`px-4 py-1 rounded-full text-sm font-semibold ${recModo === m.modo ? 'bg-rose-600 text-white' : 'bg-gray-700 text-gray-300 hover:bg-gray-600'}`}>
+                                            {m.texto}
+                                        </button>
+                                    ))}
+                                </div>
+                                <p className="text-gray-400">
+                                    {obrasRecModo.length === 0
+                                        ? `No hay ${searchType === 'movie' ? 'películas' : 'series'} aquí.`
+                                        : recModo === 'porMirar' ? 'Pásalas a Pendientes o quítalas de aquí cuando quieras: seguirás viendo quién te las recomendó.'
+                                        : recModo === 'recibidas' ? 'Con quién te recomendó cada una, aunque ya la hayas pasado a Pendientes o quitado.'
+                                        : 'Con a quién se la recomendaste.'}
+                                </p>
+                            </div>
                         )}
                         {viewMode === 'amigos' && (amigoVisto ? (
                             <div className="flex flex-col items-center gap-3 mb-4">
@@ -1405,9 +1438,10 @@ const App = ({ user, nombre, onNombreCambiado }) => {
                                             sortBy={sortBy}
                                             viewMode={viewMode}
                                             amigos={amigosPorObra[randomlyChosenContent.id]}
-                                            recomendaciones={recomendacionesPorObra[randomlyChosenContent.id]}
+                                            recomendaciones={recibidasPorObra[randomlyChosenContent.id]}
+                                            recomendacionesHechas={hechasPorObra[randomlyChosenContent.id]}
                                             onRecommend={abrirRecomendar}
-                                            onRecomendacionPendiente={viewMode === 'recomendadas' ? (id) => quitarDeRecomendadas(id, true) : null}
+                                            onRecomendacionPendiente={viewMode === 'recomendadas' && recModo === 'porMirar' ? (id) => quitarDeRecomendadas(id, true) : null}
                                             onRecomendacionQuitar={(id) => quitarDeRecomendadas(id, false)}
                                         />
                                     );
@@ -1450,9 +1484,10 @@ const App = ({ user, nombre, onNombreCambiado }) => {
                                             sortBy={sortBy}
                                             viewMode={viewMode}
                                             amigos={amigosPorObra[item.id]}
-                                            recomendaciones={recomendacionesPorObra[item.id]}
+                                            recomendaciones={recibidasPorObra[item.id]}
+                                            recomendacionesHechas={hechasPorObra[item.id]}
                                             onRecommend={abrirRecomendar}
-                                            onRecomendacionPendiente={viewMode === 'recomendadas' ? (id) => quitarDeRecomendadas(id, true) : null}
+                                            onRecomendacionPendiente={viewMode === 'recomendadas' && recModo === 'porMirar' ? (id) => quitarDeRecomendadas(id, true) : null}
                                             onRecomendacionQuitar={(id) => quitarDeRecomendadas(id, false)}
                                         />
                                     );
@@ -1521,6 +1556,7 @@ const App = ({ user, nombre, onNombreCambiado }) => {
                 obra={obraARecomendar}
                 onClose={() => setObraARecomendar(null)}
                 amigos={amigosParaRecomendar}
+                onRecomendada={recargarRecomendaciones}
             />
 
             <PlatformAnalysisModal 

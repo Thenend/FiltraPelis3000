@@ -199,13 +199,15 @@ export const dejarDeVer = async (duenoId) => {
 };
 
 // ---------- Recomendaciones ----------
-// Películas y series que te recomiendan otras personas (funciones «recomendar», «recomendaciones_recibidas» y
-// «quitar_recomendacion» de supabase/esquema.sql).
+// Películas y series que te recomiendan otras personas y que recomiendas tú (funciones «recomendar»,
+// «mis_recomendaciones» y «quitar_recomendacion» de supabase/esquema.sql).
 
-// [{ id, de, nombre, tipo: 'movie' | 'tv', obra, nota, creada }], de la más nueva a la más vieja.
+// [{ direccion: 'recibida' | 'hecha', id, usuario (quién te la recomendó o a quién se la recomendaste), nombre,
+//    tipo: 'movie' | 'tv', obra, nota, creada, archivada (ya la pasaste a Pendientes o la quitaste) }],
+// de la más nueva a la más vieja.
 export const cargarRecomendaciones = async () => {
     if (modoPrueba) return [];
-    const { data, error } = await supabase.rpc('recomendaciones_recibidas');
+    const { data, error } = await supabase.rpc('mis_recomendaciones');
     if (error) throw error;
     return data || [];
 };
@@ -220,7 +222,7 @@ export const recomendar = async (usuarios, nombres, tipo, obra, nota) => {
     return data;
 };
 
-// La quita de tus «Recomendadas» (venga de quien venga).
+// La quita de tus «Recomendadas» (venga de quien venga). Se sigue sabiendo quién te la recomendó.
 export const quitarRecomendacion = async (tipo, obra) => {
     if (modoPrueba) return;
     const { error } = await supabase.rpc('quitar_recomendacion', { p_tipo: tipo, p_obra: obra });

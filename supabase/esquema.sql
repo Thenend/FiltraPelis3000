@@ -272,7 +272,8 @@ grant execute on function public.bibliotecas_compartidas() to authenticated;
 
 -- Recomendaciones: «de» le recomienda a «para» una película o serie (tipo «movie» o «tv» y su número en TMDB), con una
 -- nota opcional. Si vuelve a recomendar la misma, se cambia la nota y la fecha. Quien la recibe la ve en «Recomendadas»
--- hasta que la pasa a Pendientes o la quita. Nadie lee la tabla directamente: todo pasa por las funciones de abajo.
+-- hasta que la pasa a Pendientes o la quita («archivada»); no se borra, para que los dos sigan sabiendo quién se la
+-- recomendó a quién. Nadie lee la tabla directamente: todo pasa por las funciones de abajo.
 create table if not exists public.recomendaciones (
     id     bigint generated always as identity primary key,
     de     uuid not null references auth.users (id) on delete cascade,
@@ -281,10 +282,13 @@ create table if not exists public.recomendaciones (
     obra   bigint not null,
     nota   text check (char_length(nota) <= 300),
     creada timestamptz not null default now(),
+    archivada boolean not null default false,
     unique (de, para, tipo, obra),
     check (de <> para)
 );
+alter table public.recomendaciones add column if not exists archivada boolean not null default false;
 create index if not exists recomendaciones_para on public.recomendaciones (para);
+create index if not exists recomendaciones_de on public.recomendaciones (de);
 alter table public.recomendaciones enable row level security;
 revoke all on public.recomendaciones from anon, authenticated;
 
@@ -318,11 +322,12 @@ begin
     if cardinality(v_destinos) = 0 then raise exception 'Elige al menos a una persona.'; end if;
     insert into public.recomendaciones (de, para, tipo, obra, nota)
     select auth.uid(), d, p_tipo, p_obra, v_nota from unnest(v_destinos) d
-    on conflict (de, para, tipo, obra) do update set nota = excluded.nota, creada = now();
+    on conflict (de, para, tipo, obra) do update set nota = excluded.nota, creada = now(), archivada = false;
     return cardinality(v_destinos);
 end $$;
 
--- Las recomendaciones que te han hecho, de la más nueva a la más vieja, con el nombre de quien te la hizo.
+-- Las recomendaciones que te han hecho y aún no has quitado, de la más nueva a la más vieja, con el nombre de quien te la
+-- hizo. La web ya usa «mis_recomendaciones»; esta queda para las versiones anteriores.
 create or replace function public.recomendaciones_recibidas()
 returns table (id bigint, de uuid, nombre text, tipo text, obra bigint, nota text, creada timestamptz)
 language sql stable security definer set search_path = '' as $$
@@ -330,19 +335,37 @@ language sql stable security definer set search_path = '' as $$
     from public.recomendaciones r
         join auth.users u on u.id = r.de
         left join public.perfiles pf on pf.usuario = r.de
-    where r.para = auth.uid()
+    where r.para = auth.uid() and not r.archivada
     order by r.creada desc
 $$;
 
--- Quita de tus «Recomendadas» todas las recomendaciones de esa obra (de cualquiera que te la haya recomendado).
+-- Todas tus recomendaciones, de la más nueva a la más vieja: las que te han hecho («recibida», con quién te la hizo y si
+-- ya la has quitado de «Recomendadas») y las que has hecho tú («hecha», con a quién).
+create or replace function public.mis_recomendaciones()
+returns table (direccion text, id bigint, usuario uuid, nombre text, tipo text, obra bigint, nota text, creada timestamptz, archivada boolean)
+language sql stable security definer set search_path = '' as $$
+    select case when r.para = auth.uid() then 'recibida' else 'hecha' end, r.id,
+        case when r.para = auth.uid() then r.de else r.para end,
+        coalesce(pf.nombre, split_part(u.email::text, '@', 1)), r.tipo, r.obra, r.nota, r.creada, r.archivada
+    from public.recomendaciones r
+        join auth.users u on u.id = case when r.para = auth.uid() then r.de else r.para end
+        left join public.perfiles pf on pf.usuario = u.id
+    where r.para = auth.uid() or r.de = auth.uid()
+    order by r.creada desc
+$$;
+
+-- Quita de tus «Recomendadas» todas las recomendaciones de esa obra (de cualquiera que te la haya recomendado). Se
+-- archivan, no se borran: sigues viendo quién te la recomendó.
 create or replace function public.quitar_recomendacion(p_tipo text, p_obra bigint)
 returns void language sql security definer set search_path = '' as $$
-    delete from public.recomendaciones where para = auth.uid() and tipo = p_tipo and obra = p_obra
+    update public.recomendaciones set archivada = true where para = auth.uid() and tipo = p_tipo and obra = p_obra
 $$;
 
 revoke all on function public.recomendar(uuid[], text[], text, bigint, text) from public, anon;
 revoke all on function public.recomendaciones_recibidas() from public, anon;
+revoke all on function public.mis_recomendaciones() from public, anon;
 revoke all on function public.quitar_recomendacion(text, bigint) from public, anon;
 grant execute on function public.recomendar(uuid[], text[], text, bigint, text) to authenticated;
 grant execute on function public.recomendaciones_recibidas() to authenticated;
+grant execute on function public.mis_recomendaciones() to authenticated;
 grant execute on function public.quitar_recomendacion(text, bigint) to authenticated;

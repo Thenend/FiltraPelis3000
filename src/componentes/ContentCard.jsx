@@ -13,6 +13,7 @@ const ContentCard = ({
     viewMode,
     amigos, // [{ usuario, nombre, pestanas }]: amigos que la tienen en alguna pestaña que te comparten
     recomendaciones, // [{ id, nombre, nota, nueva }]: quién te la ha recomendado
+    recomendacionesHechas, // [{ id, nombre, nota }]: a quién se la has recomendado tú
     onRecommend, // abre la ventana para recomendarla
     onRecomendacionPendiente, onRecomendacionQuitar // solo en «Recomendadas»
 }) => {
@@ -127,10 +128,18 @@ const ContentCard = ({
                         {recomendaciones.map(r => (
                             <div key={r.id} className="bg-rose-900/40 border border-rose-700/50 text-rose-100 rounded-lg px-2 py-1">
                                 {r.nueva && <span className="bg-rose-600 text-white text-[9px] font-bold uppercase rounded px-1 mr-1">Nueva</span>}
-                                <span className="font-semibold">💌 {r.nombre}</span>
+                                <span className="font-semibold">💌 Te la recomendó</span> {r.nombre}
                                 {r.nota && <span className="text-rose-200/90 break-words">: «{r.nota}»</span>}
                             </div>
                         ))}
+                    </div>
+                )}
+                {recomendacionesHechas?.length > 0 && (
+                    <div
+                        className="mb-2 text-[11px] text-left bg-sky-900/40 border border-sky-700/50 text-sky-100 rounded-lg px-2 py-1"
+                        title={recomendacionesHechas.map(r => r.nota ? `${r.nombre}: «${r.nota}»` : r.nombre).join('\n')}
+                    >
+                        <span className="font-semibold">📤 Se la recomendaste a</span> {recomendacionesHechas.map(r => r.nombre).join(', ')}
                     </div>
                 )}
                 {onRecomendacionPendiente && (

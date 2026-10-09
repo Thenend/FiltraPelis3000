@@ -2,8 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { recomendar } from '../datos';
 
 // Ventana para recomendar una película o serie: se marcan amigos (gente con la que compartes o que comparte contigo, o
-// que te ha recomendado algo), se pueden escribir otros nombres de usuario y se añade una nota si se quiere.
-const RecomendarModal = ({ obra, onClose, amigos }) => {
+// con quien os habéis recomendado algo), se pueden escribir otros nombres de usuario y se añade una nota si se quiere.
+const RecomendarModal = ({ obra, onClose, amigos, onRecomendada }) => {
     const [marcados, setMarcados] = useState([]);
     const [otros, setOtros] = useState('');
     const [nota, setNota] = useState('');
@@ -25,6 +25,7 @@ const RecomendarModal = ({ obra, onClose, amigos }) => {
             const n = await recomendar(marcados, nombres, obra.tipo, obra.id, nota.trim());
             setAviso(n === 1 ? 'Recomendada. La verá en su apartado «Recomendadas».' : `Recomendada a ${n} personas. La verán en su apartado «Recomendadas».`);
             setHecho(true);
+            onRecomendada?.();
         } catch (err) {
             setAviso('No se ha podido recomendar: ' + (err.message || err));
         } finally { setOcupado(false); }

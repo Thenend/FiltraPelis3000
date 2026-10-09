@@ -47,7 +47,9 @@ y en cualquier tarjeta se ve qué amigos la tienen en esas pestañas (p. ej. «�
 ### 4. Recomendar películas y series (opcional)
 Pulsa **💌** en cualquier tarjeta, marca a quién se la recomiendas (o escribe su nombre de usuario) y añade una nota si
 quieres. Lo que te recomiendan aparece en la pestaña **💌 Recomendadas**, con quién te lo recomendó y su nota; desde ahí
-puedes pasarlo a Pendientes o quitarlo. Cuando te llega una recomendación nueva, al entrar sale un aviso arriba.
+puedes pasarlo a Pendientes o quitarlo. Cuando te llega una recomendación nueva, al entrar sale un aviso arriba. En la
+misma pestaña puedes ver todas las que te han recomendado (y quién) y las que has recomendado tú (y a quién); en
+cualquier tarjeta se ve también «💌 Te la recomendó…» y «📤 Se la recomendaste a…».
 
 ### 5. La IA (opcional)
 «Pregunta al IA» usa Gemini. Crea una clave gratis en <https://aistudio.google.com/apikey> y pégala en la web en
