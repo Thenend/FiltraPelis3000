@@ -307,10 +307,18 @@ const App = ({ user, nombre, onNombreCambiado }) => {
         setUserLists(prev => ({ ...prev, [searchType]: { ...prev[searchType], [listName]: newList } }));
         try {
             await ponerEnLista(`${listName}_${searchType}`, id, poner);
+            if (listName === 'watched' && poner) await quitarDePendientes(searchType, id);
         } catch (error) {
             console.error(`Error updating ${listName}_${searchType}:`, error);
             showMessage("No se ha podido guardar el cambio. Revisa la conexión.");
         }
+    };
+
+    // Lo que ya has visto entero deja de estar pendiente.
+    const quitarDePendientes = async (tipo, id) => {
+        if (!userLists[tipo].pending.includes(id)) return;
+        setUserLists(prev => ({ ...prev, [tipo]: { ...prev[tipo], pending: prev[tipo].pending.filter(x => x !== id) } }));
+        await ponerEnLista(`pending_${tipo}`, id, false);
     };
 
     const saveWatchedSeasons = async (showId, selectedWatchedSeasons, selectedWatchingSeasons) => {
@@ -337,6 +345,7 @@ const App = ({ user, nombre, onNombreCambiado }) => {
         if (user) {
             try {
                 await guardarTemporadas(showId, selectedWatchedSeasons, selectedWatchingSeasons, isFullyWatched);
+                if (isFullyWatched) await quitarDePendientes('tv', showId);
             } catch (error) {
                 console.error("Error saving seasons:", error);
                 showMessage("No se ha podido guardar el cambio. Revisa la conexión.");
