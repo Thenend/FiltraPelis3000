@@ -18,6 +18,10 @@ el ordenador, la tablet o el móvil, y se actualizan solas si cambias algo en ot
   **Sign In / Providers → Email**, «Confirm email» está desactivado para entrar al momento al crear la cuenta.
 - **GitHub Pages**: en **Settings → Pages → Source**, «GitHub Actions». Cada vez que cambia la rama `main`, la acción
   **Web** (pestaña **Actions**) publica la web en un par de minutos (también a mano: **Actions → Web → Run workflow**).
+- **Notas de IMDb, Rotten Tomatoes y Metacritic**: la web las pide a la función `omdb` de Supabase
+  ([`supabase/functions/omdb`](supabase/functions/omdb/index.ts)), que guarda la clave de OMDb como secreto
+  (**Edge Functions → Secrets → `OMDB_API_KEY`**) y recuerda 30 días cada respuesta en la tabla `omdb_cache`, compartida
+  entre todos. Así la clave no está en la página y cada obra gasta una sola consulta al mes.
 - La dirección del proyecto de Supabase y su clave publicable están en `src/datos.js`: pueden estar en la página, porque
   sin una cuenta no dan acceso a nada. Si algún día cambian, se pueden poner las variables del repositorio
   `SUPABASE_URL` y `SUPABASE_ANON_KEY` (**Settings → Secrets and variables → Actions → Variables**), que mandan sobre las
@@ -45,4 +49,6 @@ npm run build
 - `src/App.jsx`: la aplicación (la misma de Gemini Canvas, guardando en Supabase en vez de Firestore).
 - `src/datos.js`: cuentas y guardado (Supabase, o el navegador en modo de prueba).
 - `src/Entrada.jsx`, `src/BarraCuenta.jsx`: entrar, crear cuenta, contraseña, clave de IA y salir.
-- `supabase/esquema.sql`: la tabla `preferencias` y sus permisos.
+- `src/componentes/`: las tarjetas, el selector de rangos y las ventanas (temporadas, ficha de OMDb, plataformas).
+- `src/notas.js`: notas de OMDb ya consultadas, guardadas en el navegador.
+- `supabase/esquema.sql`: las tablas `preferencias` y `omdb_cache`, sus permisos y las funciones que guardan cada cambio.
