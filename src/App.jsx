@@ -43,7 +43,7 @@ const App = ({ user }) => {
     // Con quién compartes y quién comparte contigo (con sus listas de las pestañas compartidas). Ver datos.js.
     const [compartidos, setCompartidos] = useState([]);
     const [compartirAbierto, setCompartirAbierto] = useState(false);
-    // Qué amigo y qué pestañas suyas (se pueden marcar varias, o ninguna) se ven en la pestaña «Amigos».
+    // Qué amigo y qué pestaña suya (una o ninguna) se ven en la pestaña «Amigos».
     // Con pestanas a null, la primera que comparte.
     const [amigoSel, setAmigoSel] = useState({ usuario: null, pestanas: null });
 
@@ -169,7 +169,7 @@ const App = ({ user }) => {
     const pestanasVistas = !amigoVisto ? [] : PESTANAS_COMPARTIBLES.map(p => p.clave).filter(p => amigoVisto.pestanas.includes(p))
         .filter((p, i) => amigoSel.pestanas ? amigoSel.pestanas.includes(p) : i === 0);
     const marcarPestanaAmigo = (pestana) => setAmigoSel({ usuario: amigoVisto.usuario,
-        pestanas: pestanasVistas.includes(pestana) ? pestanasVistas.filter(p => p !== pestana) : [...pestanasVistas, pestana] });
+        pestanas: pestanasVistas.includes(pestana) ? [] : [pestana] });
     const listaDeAmigo = (amigo, pestana, tipo) => amigo?.listas?.[`${pestana}_${tipo}`] || [];
 
     // Para cada obra (del tipo actual), qué amigos la tienen y en qué pestañas compartidas: { id: [{ nombre, pestanas }] }
@@ -1235,7 +1235,7 @@ const App = ({ user }) => {
                                         </button>
                                     ))}
                                 </div>
-                                {pestanasVistas.length === 0 && <p className="text-gray-400 text-sm">Marca una o varias pestañas para ver sus películas y series.</p>}
+                                {pestanasVistas.length === 0 && <p className="text-gray-400 text-sm">Marca una pestaña para ver sus películas y series.</p>}
                             </div>
                         ) : (
                             <p className="text-gray-400 mb-4">Ya nadie comparte su biblioteca contigo.</p>
